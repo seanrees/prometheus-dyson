@@ -6,9 +6,10 @@ to extend to other fan types (I just don't have one to test).
 
 ## Dependencies
 
+```
 pip install libpurecoollink
 pip install prometheus_client
-
+```
 ## Metrics
 
 ### Environmental
@@ -56,11 +57,11 @@ optional arguments:
 ### Scrape Frequency
 
 I scrape at 15s intervals. Metrics are updated at approximately 30 second
-intervals by libpurecoollink.
+intervals by `libpurecoollink`.
 
 ### Other Notes
 
-libpurecoollink by default uses a flavour of mDNS to automatically discover
+`libpurecoollink` by default uses a flavour of mDNS to automatically discover
 the Dyson fan. This is overridable (but this script doesn't at the moment).
 The mDNS dependency makes Dockerising this script somewhat challenging at
 the moment.
