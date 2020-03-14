@@ -2,7 +2,7 @@
 """Exports Dyson Pure Hot+Cool (DysonLink) statistics as Prometheus metrics.
 
 This module depends on two libraries to function:
-  pip install libpurecoollink
+  pip install libpurecool
   pip install prometheus_client
 """
 
@@ -16,8 +16,8 @@ import time
 
 from typing import Callable
 
-from libpurecoollink import dyson
-from libpurecoollink import dyson_pure_state
+from libpurecool import dyson
+from libpurecool import dyson_pure_state
 import prometheus_client
 
 # Rationale:
@@ -79,7 +79,7 @@ class Metrics():
 
     if isinstance(message, dyson_pure_state.DysonEnvironmentalSensorState):
       self.humidity.labels(name=name, serial=serial).set(message.humidity)
-      self.temperature.labels(name=name, serial=serial).set(message.temperature - 273)
+      self.temperature.labels(name=name, serial=serial).set(message.temperature - 273.2)
       self.voc.labels(name=name, serial=serial).set(message.volatil_organic_compounds)
       self.dust.labels(name=name, serial=serial).set(message.dust)
     elif isinstance(message, dyson_pure_state.DysonPureHotCoolState):
@@ -91,11 +91,14 @@ class Metrics():
         speed = -1
       self.fan_speed.labels(name=name, serial=serial).set(speed)
 
+      # Convert from Decicelsius to Kelvin.
+      heat_target = int(message.heat_target) / 10 - 273.2
+
       self.oscillation.labels(name=name, serial=serial).state(message.oscillation)
       self.focus_mode.labels(name=name, serial=serial).state(message.focus_mode)
       self.heat_mode.labels(name=name, serial=serial).state(message.heat_mode)
       self.heat_state.labels(name=name, serial=serial).state(message.heat_state)
-      self.heat_target.labels(name=name, serial=serial).set(int(message.heat_target)/10 - 273)
+      self.heat_target.labels(name=name, serial=serial).set(heat_target)
       self.quality_target.labels(name=name, serial=serial).set(message.quality_target)
       self.filter_life.labels(name=name, serial=serial).set(message.filter_life)
     else:
