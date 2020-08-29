@@ -1,0 +1,15 @@
+[Unit]
+Description=Prometheus metrics exporter for Dyson Hot+Cool fans
+Documentation=https://github.com/seanrees/prometheus-dyson
+
+[Service]
+Restart=always
+User=nobody
+EnvironmentFile=/etc/default/prometheus-dyson
+ExecStart=python3 /opt/prometheus-dyson/bin/main $ARGS
+ExecReload=/bin/kill -HUP $MAINPID
+TimeoutStopSec=20s
+SendSIGKILL=no
+
+[Install]
+WantedBy=multi-user.target

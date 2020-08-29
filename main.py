@@ -75,7 +75,7 @@ class Metrics():
     if not name or not serial:
       logging.error('Ignoring update with name=%s, serial=%s', name, serial)
 
-    logging.info('Received update for %s (serial=%s): %s', name, serial, message)
+    logging.debug('Received update for %s (serial=%s): %s', name, serial, message)
 
     if isinstance(message, dyson_pure_state.DysonEnvironmentalSensorState):
       self.humidity.labels(name=name, serial=serial).set(message.humidity)
@@ -193,7 +193,7 @@ def main(argv):
   logging.basicConfig(
       format='%(asctime)s %(levelname)10s %(message)s',
       datefmt='%Y/%m/%d %H:%M:%S',
-      level=logging.DEBUG)
+      level=logging.INFO)
 
   logging.info('Starting up on port=%s', args.port)
 
