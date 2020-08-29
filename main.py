@@ -16,9 +16,9 @@ import time
 
 from typing import Callable
 
-from libpurecool import dyson
-from libpurecool import dyson_pure_state
-import prometheus_client
+from libpurecool import dyson            # type: ignore[import]
+from libpurecool import dyson_pure_state # type: ignore[import]
+import prometheus_client                 # type: ignore[import]
 
 # Rationale:
 #    too-many-instance-attributes: refers to Metrics. This is an intentional design choice.
@@ -161,7 +161,7 @@ def _sleep_forever() -> None:
     except KeyboardInterrupt:
       break
 
-def _read_config(filename) -> DysonLinkCredentials:
+def _read_config(filename):
   """Reads configuration file. Returns DysonLinkCredentials or None on error."""
   config = configparser.ConfigParser()
 
