@@ -4,37 +4,51 @@ Prometheus client for DysonLink fans (e.g; Pure Hot+Cool).
 This code only supports Pure Hot+Cool fans at the moment. It should be trivial
 to extend to other fan types (I just don't have one to test).
 
-## Dependencies
+## Build
+
+```
+% bazel build :main
+```
+
+If you'd like a Debian package:
+```
+% baze build :main-deb
+```
+
+### Without Bazel
+
+You'll need these dependencies:
 
 ```
 pip install libpurecool
 pip install prometheus_client
 ```
+
 ## Metrics
 
 ### Environmental
 
 Name | Type | Description
 ---- | ---- | -----------
-humidity | gauge | relative humidity percentage
-temperature | gauge | ambient temperature in celsius
-voc | gauge | volatile organic compounds (range 0-10?)
-dust | gauge | dust level (range 0-10?)
+dyson_humidity_percent | gauge | relative humidity percentage
+dyson_temperature_celsius | gauge | ambient temperature in celsius
+dyson_volatile_organic_compounds_units | gauge | volatile organic compounds (range 0-10?)
+dyson_dust_units | gauge | dust level (range 0-10?)
 
 ### Operational
 
 Name | Type | Description
 ---- | ---- | -----------
-fan_mode | enum | AUTO, FAN (what the fan is set to)
-fan_state | enum | FAN, OFF (what the fan is actually doing)
-fan_speed | gauge | 0-10 (or -1 if on AUTO)
-oscillation | enum | ON, OFF
-focus_mode | enum | ON, OFF
-heat_mode | enum | HEAT, OFF (OFF means "in cooling mode")
-heat_state | enum | HEAT, OFF (what the fan is actually doing)
-heat_target | gauge | target temperature (celsius)
-quality_target | gauge | air quality target (1, 3, 5?)
-filter_life | gauge | hours of filter life remaining
+dyson_fan_mode | enum | AUTO, FAN (what the fan is set to)
+dyson_fan_state | enum | FAN, OFF (what the fan is actually doing)
+dyson_fan_speed_units | gauge | 0-10 (or -1 if on AUTO)
+dyson_oscillation_mode | enum | ON, OFF
+dyson_focus_mode | enum | ON, OFF
+dyson_heat_mode | enum | HEAT, OFF (OFF means "in cooling mode")
+dyson_heat_state | enum | HEAT, OFF (what the fan is actually doing)
+dyson_heat_target_celsius | gauge | target temperature (celsius)
+dyson_quality_target_units | gauge | air quality target (1, 3, 5?)
+dyson_filter_life_seconds | gauge | seconds of filter life remaining
 
 ## Usage
 

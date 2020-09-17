@@ -35,34 +35,37 @@ class Metrics():
     labels = ['name', 'serial']
 
     # Environmental Sensors
-    self.humidity = prometheus_client.Gauge('humidity', 'Relative humidity (percentage)', labels)
+    self.humidity = prometheus_client.Gauge(
+        'dyson_humidity_percent', 'Relative humidity (percentage)', labels)
     self.temperature = prometheus_client.Gauge(
-        'temperature', 'Ambient temperature (celsius)', labels)
-    self.voc = prometheus_client.Gauge('voc', 'Level of Volatile organic compounds', labels)
-    self.dust = prometheus_client.Gauge('dust', 'Level of Dust', labels)
+        'dyson_temperature_celsius', 'Ambient temperature (celsius)', labels)
+    self.voc = prometheus_client.Gauge(
+        'dyson_volatile_organic_compounds_units', 'Level of Volatile organic compounds', labels)
+    self.dust = prometheus_client.Gauge(
+        'dyson_dust_units', 'Level of Dust', labels)
 
     # Operational State
     # Ignoring: tilt (known values OK), standby_monitoring.
     self.fan_mode = prometheus_client.Enum(
-        'fan_mode', 'Current mode of the fan', labels, states=['AUTO', 'FAN'])
+        'dyson_fan_mode', 'Current mode of the fan', labels, states=['AUTO', 'FAN'])
     self.fan_state = prometheus_client.Enum(
-        'fan_state', 'Current running state of the fan', labels, states=['FAN', 'OFF'])
+        'dyson_fan_state', 'Current running state of the fan', labels, states=['FAN', 'OFF'])
     self.fan_speed = prometheus_client.Gauge(
-        'fan_speed', 'Current speed of fan (-1 = AUTO)', labels)
+        'dyson_fan_speed_units', 'Current speed of fan (-1 = AUTO)', labels)
     self.oscillation = prometheus_client.Enum(
-        'oscillation', 'Current oscillation mode', labels, states=['ON', 'OFF'])
+        'dyson_oscillation_mode', 'Current oscillation mode', labels, states=['ON', 'OFF'])
     self.focus_mode = prometheus_client.Enum(
-        'focus_mode', 'Current focus mode', labels, states=['ON', 'OFF'])
+        'dyson_focus_mode', 'Current focus mode', labels, states=['ON', 'OFF'])
     self.heat_mode = prometheus_client.Enum(
-        'heat_mode', 'Current heat mode', labels, states=['HEAT', 'OFF'])
+        'dyson_heat_mode', 'Current heat mode', labels, states=['HEAT', 'OFF'])
     self.heat_state = prometheus_client.Enum(
-        'heat_state', 'Current heat state', labels, states=['HEAT', 'OFF'])
+        'dyson_heat_state', 'Current heat state', labels, states=['HEAT', 'OFF'])
     self.heat_target = prometheus_client.Gauge(
-        'heat_target', 'Heat target temperature (celsius)', labels)
+        'dyson_heat_target_celsius', 'Heat target temperature (celsius)', labels)
     self.quality_target = prometheus_client.Gauge(
-        'quality_target', 'Quality target for fan', labels)
+        'dyson_quality_target_units', 'Quality target for fan', labels)
     self.filter_life = prometheus_client.Gauge(
-        'filter_life', 'Remaining filter life (hours)', labels)
+        'dyson_filter_life_seconds', 'Remaining filter life (seconds)', labels)
 
   def update(self, name: str, serial: str, message: object) -> None:
     """Receives a sensor or device state update and updates Prometheus metrics.
@@ -94,13 +97,16 @@ class Metrics():
       # Convert from Decicelsius to Kelvin.
       heat_target = int(message.heat_target) / 10 - 273.2
 
+      # Convert filter_life from hours to seconds
+      filter_life = int(message.filter_life) * 60 * 60
+
       self.oscillation.labels(name=name, serial=serial).state(message.oscillation)
       self.focus_mode.labels(name=name, serial=serial).state(message.focus_mode)
       self.heat_mode.labels(name=name, serial=serial).state(message.heat_mode)
       self.heat_state.labels(name=name, serial=serial).state(message.heat_state)
       self.heat_target.labels(name=name, serial=serial).set(heat_target)
       self.quality_target.labels(name=name, serial=serial).set(message.quality_target)
-      self.filter_life.labels(name=name, serial=serial).set(message.filter_life)
+      self.filter_life.labels(name=name, serial=serial).set(filter_life)
     else:
       logging.warning('Received unknown update from "%s" (serial=%s): %s; ignoring',
                       name, serial, type(message))
