@@ -47,7 +47,7 @@ class Metrics():
     # Operational State
     # Ignoring: tilt (known values OK), standby_monitoring.
     self.fan_mode = prometheus_client.Enum(
-        'dyson_fan_mode', 'Current mode of the fan', labels, states=['AUTO', 'FAN'])
+        'dyson_fan_mode', 'Current mode of the fan', labels, states=['AUTO', 'FAN', 'OFF'])
     self.fan_state = prometheus_client.Enum(
         'dyson_fan_state', 'Current running state of the fan', labels, states=['FAN', 'OFF'])
     self.fan_speed = prometheus_client.Gauge(
