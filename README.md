@@ -1,7 +1,7 @@
 # prometheus_dyson
-Prometheus client for DysonLink fans (e.g; Pure Hot+Cool).
+Prometheus client for DysonLink fans (e.g; Pure Hot+Cool and Pure Cool).
 
-This code only supports Pure Hot+Cool fans at the moment. It should be trivial
+This code only supports Pure Hot+Cool and Pure Cool fans at the moment. It should be trivial
 to extend to other fan types (I just don't have one to test).
 
 ## Build
@@ -39,7 +39,7 @@ dyson_dust_units | gauge | dust level (range 0-10?)
 
 Name | Type | Description
 ---- | ---- | -----------
-dyson_fan_mode | enum | AUTO, FAN (what the fan is set to)
+dyson_fan_mode | enum | AUTO, FAN, OFF (what the fan is set to)
 dyson_fan_state | enum | FAN, OFF (what the fan is actually doing)
 dyson_fan_speed_units | gauge | 0-10 (or -1 if on AUTO)
 dyson_oscillation_mode | enum | ON, OFF
