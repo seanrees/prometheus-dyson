@@ -73,7 +73,8 @@ class Metrics():
     Args:
       name: (str) Name of device.
       serial: (str) Serial number of device.
-      message: must be one of a DysonEnvironmentalSensorState or DysonPureHotCoolState.
+      message: must be one of a DysonEnvironmentalSensorState, DysonPureHotCoolState
+      or DysonPureCoolState.
     """
     if not name or not serial:
       logging.error('Ignoring update with name=%s, serial=%s', name, serial)
@@ -85,7 +86,7 @@ class Metrics():
       self.temperature.labels(name=name, serial=serial).set(message.temperature - 273.2)
       self.voc.labels(name=name, serial=serial).set(message.volatil_organic_compounds)
       self.dust.labels(name=name, serial=serial).set(message.dust)
-    elif isinstance(message, dyson_pure_state.DysonPureHotCoolState):
+    elif isinstance(message, dyson_pure_state.DysonPureCoolState):
       self.fan_mode.labels(name=name, serial=serial).state(message.fan_mode)
       self.fan_state.labels(name=name, serial=serial).state(message.fan_state)
 
@@ -94,19 +95,22 @@ class Metrics():
         speed = -1
       self.fan_speed.labels(name=name, serial=serial).set(speed)
 
-      # Convert from Decicelsius to Kelvin.
-      heat_target = int(message.heat_target) / 10 - 273.2
-
       # Convert filter_life from hours to seconds
       filter_life = int(message.filter_life) * 60 * 60
 
       self.oscillation.labels(name=name, serial=serial).state(message.oscillation)
-      self.focus_mode.labels(name=name, serial=serial).state(message.focus_mode)
-      self.heat_mode.labels(name=name, serial=serial).state(message.heat_mode)
-      self.heat_state.labels(name=name, serial=serial).state(message.heat_state)
-      self.heat_target.labels(name=name, serial=serial).set(heat_target)
       self.quality_target.labels(name=name, serial=serial).set(message.quality_target)
       self.filter_life.labels(name=name, serial=serial).set(filter_life)
+
+      # Metrics only available with DysonPureHotCoolState
+      if isinstance(message, dyson_pure_state.DysonPureHotCoolState):
+        # Convert from Decicelsius to Kelvin.
+        heat_target = int(message.heat_target) / 10 - 273.2
+
+        self.focus_mode.labels(name=name, serial=serial).state(message.focus_mode)
+        self.heat_mode.labels(name=name, serial=serial).state(message.heat_mode)
+        self.heat_state.labels(name=name, serial=serial).state(message.heat_state)
+        self.heat_target.labels(name=name, serial=serial).set(heat_target)
     else:
       logging.warning('Received unknown update from "%s" (serial=%s): %s; ignoring',
                       name, serial, type(message))
