@@ -12,7 +12,7 @@ to extend to other fan types (I just don't have one to test).
 
 If you'd like a Debian package:
 ```
-% baze build :main-deb
+% bazel build :main-deb
 ```
 
 ### Without Bazel
@@ -20,9 +20,11 @@ If you'd like a Debian package:
 You'll need these dependencies:
 
 ```
-pip install libpurecool
-pip install prometheus_client
+% pip install libpurecool
+% pip install prometheus_client
 ```
+
+Consider installing in a [Python virtual environment](https://docs.python.org/3/tutorial/venv.html).
 
 ## Metrics
 
@@ -63,9 +65,13 @@ for your DysonLink login credentials.
 usage: ./prometheus_dyson.py [-h] [--port PORT] [--config CONFIG]
 
 optional arguments:
-  -h, --help       show this help message and exit
-  --port PORT      HTTP server port
-  --config CONFIG  Configuration file (INI file)
+  -h, --help            show this help message and exit
+  --port PORT           HTTP server port
+  --config CONFIG       Configuration file (INI file)
+  --log_level LOG_LEVEL
+                        Logging level (DEBUG, INFO, WARNING, ERROR)
+  --include_inactive_devices
+                        Only monitor devices marked as "active" in the Dyson API
 ```
 
 ### Scrape Frequency

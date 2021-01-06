@@ -198,14 +198,29 @@ def main(argv):
   parser = argparse.ArgumentParser(prog=argv[0])
   parser.add_argument('--port', help='HTTP server port', type=int, default=8091)
   parser.add_argument('--config', help='Configuration file (INI file)', default='config.ini')
+  parser.add_argument('--log_level', help='Logging level (DEBUG, INFO, WARNING, ERROR)', type=str, default='INFO')
+  parser.add_argument(
+    '--include_inactive_devices',
+    help='Only monitor devices marked as "active" in the Dyson API',
+    action='store_true')
+  args = parser.parse_args()
+
+  try:
+    level = getattr(logging, args.log_level)
+  except AttributeError:
+    print(f'Invalid --log_level: {args.log_level}')
+    exit(-1)
   args = parser.parse_args()
 
   logging.basicConfig(
       format='%(asctime)s %(levelname)10s %(message)s',
       datefmt='%Y/%m/%d %H:%M:%S',
-      level=logging.INFO)
+      level=level)
 
   logging.info('Starting up on port=%s', args.port)
+
+  if args.include_inactive_devices:
+    logging.info('Including devices marked "inactive" from the Dyson API')
 
   credentials = _read_config(args.config)
   if not credentials:
@@ -218,7 +233,7 @@ def main(argv):
   if not client.login():
     exit(-1)
 
-  client.monitor(metrics.update)
+  client.monitor(metrics.update, only_active=not args.include_inactive_devices)
   _sleep_forever()
 
 if __name__ == '__main__':
