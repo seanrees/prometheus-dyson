@@ -13,7 +13,7 @@ import logging
 import sys
 import time
 
-from typing import Callable
+from typing import Callable, Dict, Optional, Tuple
 
 from libpurecool import dyson
 import prometheus_client                    # type: ignore[import]
@@ -27,10 +27,11 @@ DysonLinkCredentials = collections.namedtuple(
 class DysonClient:
     """Connects to and monitors Dyson fans."""
 
-    def __init__(self, username, password, country):
+    def __init__(self, username, password, country, hosts: Optional[Dict] = None):
         self.username = username
         self.password = password
         self.country = country
+        self.hosts = hosts or {}
 
         self._account = None
 
@@ -61,7 +62,15 @@ class DysonClient:
                              dev.name, dev.serial)
                 continue
 
-            connected = dev.auto_connect()
+            manual_ip = self.hosts.get(dev.serial.upper())
+            if manual_ip:
+                logging.info('Attempting connection to device "%s" (serial=%s) via configured IP %s',
+                             dev.name, dev.serial, manual_ip)
+                connected = dev.connect(manual_ip)
+            else:
+                logging.info('Attempting to discover device "%s" (serial=%s) via zeroconf',
+                             dev.name, dev.serial)
+                connected = dev.auto_connect()
             if not connected:
                 logging.error('Could not connect to device "%s" (serial=%s); skipping',
                               dev.name, dev.serial)
@@ -85,10 +94,11 @@ def _sleep_forever() -> None:
             break
 
 
-def _read_config(filename):
+def _read_config(filename) -> Tuple[Optional[DysonLinkCredentials], Dict]:
     """Reads configuration file.
 
-    Returns DysonLinkCredentials or None on error.
+    Returns DysonLinkCredentials or None on error, and a dict
+    of configured device serial numbers mapping to IP addresses
     """
     config = configparser.ConfigParser()
 
@@ -98,17 +108,29 @@ def _read_config(filename):
         config.read(filename)
     except configparser.Error as ex:
         logging.critical('Could not read "%s": %s', filename, ex)
-        return None
+        return None, {}
 
     try:
         username = config['Dyson Link']['username']
         password = config['Dyson Link']['password']
         country = config['Dyson Link']['country']
-        return DysonLinkCredentials(username, password, country)
+        creds = DysonLinkCredentials(username, password, country)
     except KeyError as ex:
         logging.critical('Required key missing in "%s": %s', filename, ex)
+        return None, {}
 
-    return None
+    try:
+        hosts = config.items('Hosts')
+    except configparser.NoSectionError:
+        hosts = []
+        logging.debug('No "Devices" section found in config file, no manual IP overrides are available')
+
+    # Convert the hosts tuple (('serial0', 'ip0'), ('serial1', 'ip1'))
+    # into a dict {'SERIAL0': 'ip0', 'SERIAL1': 'ip1'}, making sure that
+    # the serial keys are upper case (configparser downcases everything)
+    host_dict = {h[0].upper(): h[1] for h in hosts}
+
+    return creds, host_dict
 
 
 def main(argv):
@@ -143,7 +165,7 @@ def main(argv):
     if args.include_inactive_devices:
         logging.info('Including devices marked "inactive" from the Dyson API')
 
-    credentials = _read_config(args.config)
+    credentials, hosts = _read_config(args.config)
     if not credentials:
         sys.exit(-1)
 
@@ -151,7 +173,7 @@ def main(argv):
     prometheus_client.start_http_server(args.port)
 
     client = DysonClient(credentials.username,
-                         credentials.password, credentials.country)
+                         credentials.password, credentials.country, hosts)
     if not client.login():
         sys.exit(-1)
 
