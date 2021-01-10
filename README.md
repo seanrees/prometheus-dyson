@@ -100,7 +100,9 @@ Fan state changes (e.g; FAN -> HEAT) are published ~immediately on change.
 ### Other Notes
 
 `libpurecool` by default uses a flavour of mDNS to automatically discover
-the Dyson fan. This is overridable (but this script doesn't at the moment).
+the Dyson fan. If automatic discovery isn't available on your network, it is possible
+to specify IP addresses mapped to device serial numbers in config.ini - see
+`config-sample.ini` for usage.
 
 ## Dashboard
 
