@@ -2,10 +2,29 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("@pip_deps//:requirements.bzl", "requirement")
 load("@rules_pkg//:pkg.bzl", "pkg_tar", "pkg_deb")
 
+py_library(
+    name = "metrics",
+    srcs = ["metrics.py"],
+    deps = [
+        requirement("libpurecool"),
+        requirement("prometheus_client")
+    ],
+)
+
+py_test(
+    name = "metrics_test",
+    srcs = ["metrics_test.py"],
+    deps = [
+        ":metrics",
+        requirement("libpurecool"),
+        requirement("prometheus_client")
+    ],
+)
 py_binary(
     name = "main",
     srcs = ["main.py"],
     deps = [
+        ":metrics",
         requirement("libpurecool"),
         requirement("prometheus_client")
     ],
@@ -66,5 +85,5 @@ pkg_deb(
     description_file = "debian/description",
     maintainer = "Sean Rees <sean at erifax.org>",
     package = "prometheus-dyson",
-    version = "0.0.1",
+    version = "0.0.2",
 )

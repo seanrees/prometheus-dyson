@@ -1,9 +1,8 @@
 #!/usr/bin/python3
 """Exports Dyson Pure Hot+Cool (DysonLink) statistics as Prometheus metrics.
 
-This module depends on two libraries to function:
-  pip install libpurecool
-  pip install prometheus_client
+This module depends on two libraries to function:   pip install
+libpurecool   pip install prometheus_client
 """
 
 import argparse
@@ -16,225 +15,150 @@ import time
 
 from typing import Callable
 
-from libpurecool import dyson            # type: ignore[import]
-from libpurecool import dyson_pure_state # type: ignore[import]
-import prometheus_client                 # type: ignore[import]
+from libpurecool import dyson
+import prometheus_client                    # type: ignore[import]
 
-# Rationale:
-#    too-many-instance-attributes: refers to Metrics. This is an intentional design choice.
-#    too-few-public-methods: refers to Metrics. This is an intentional design choice.
-#    no-member: pylint isn't understanding labels() for Gauge and Enum updates.
-# pylint: disable=too-many-instance-attributes,too-few-public-methods,no-member
+from metrics import Metrics
 
 DysonLinkCredentials = collections.namedtuple(
     'DysonLinkCredentials', ['username', 'password', 'country'])
 
-class Metrics():
-  """Registers/exports and updates Prometheus metrics for DysonLink fans."""
-  def __init__(self):
-    labels = ['name', 'serial']
 
-    # Environmental Sensors
-    self.humidity = prometheus_client.Gauge(
-        'dyson_humidity_percent', 'Relative humidity (percentage)', labels)
-    self.temperature = prometheus_client.Gauge(
-        'dyson_temperature_celsius', 'Ambient temperature (celsius)', labels)
-    self.voc = prometheus_client.Gauge(
-        'dyson_volatile_organic_compounds_units', 'Level of Volatile organic compounds', labels)
-    self.dust = prometheus_client.Gauge(
-        'dyson_dust_units', 'Level of Dust', labels)
+class DysonClient:
+    """Connects to and monitors Dyson fans."""
 
-    # Operational State
-    # Ignoring: tilt (known values OK), standby_monitoring.
-    self.fan_mode = prometheus_client.Enum(
-        'dyson_fan_mode', 'Current mode of the fan', labels, states=['AUTO', 'FAN', 'OFF'])
-    self.fan_state = prometheus_client.Enum(
-        'dyson_fan_state', 'Current running state of the fan', labels, states=['FAN', 'OFF'])
-    self.fan_speed = prometheus_client.Gauge(
-        'dyson_fan_speed_units', 'Current speed of fan (-1 = AUTO)', labels)
-    self.oscillation = prometheus_client.Enum(
-        'dyson_oscillation_mode', 'Current oscillation mode', labels, states=['ON', 'OFF'])
-    self.focus_mode = prometheus_client.Enum(
-        'dyson_focus_mode', 'Current focus mode', labels, states=['ON', 'OFF'])
-    self.heat_mode = prometheus_client.Enum(
-        'dyson_heat_mode', 'Current heat mode', labels, states=['HEAT', 'OFF'])
-    self.heat_state = prometheus_client.Enum(
-        'dyson_heat_state', 'Current heat state', labels, states=['HEAT', 'OFF'])
-    self.heat_target = prometheus_client.Gauge(
-        'dyson_heat_target_celsius', 'Heat target temperature (celsius)', labels)
-    self.quality_target = prometheus_client.Gauge(
-        'dyson_quality_target_units', 'Quality target for fan', labels)
-    self.filter_life = prometheus_client.Gauge(
-        'dyson_filter_life_seconds', 'Remaining filter life (seconds)', labels)
+    def __init__(self, username, password, country):
+        self.username = username
+        self.password = password
+        self.country = country
 
-  def update(self, name: str, serial: str, message: object) -> None:
-    """Receives a sensor or device state update and updates Prometheus metrics.
+        self._account = None
 
-    Args:
-      name: (str) Name of device.
-      serial: (str) Serial number of device.
-      message: must be one of a DysonEnvironmentalSensorState, DysonPureHotCoolState
-      or DysonPureCoolState.
-    """
-    if not name or not serial:
-      logging.error('Ignoring update with name=%s, serial=%s', name, serial)
+    def login(self) -> bool:
+        """Attempts a login to DysonLink, returns True on success (False
+        otherwise)."""
+        self._account = dyson.DysonAccount(
+            self.username, self.password, self.country)
+        if not self._account.login():
+            logging.critical(
+                'Could not login to Dyson with username %s', self.username)
+            return False
 
-    logging.debug('Received update for %s (serial=%s): %s', name, serial, message)
+        return True
 
-    if isinstance(message, dyson_pure_state.DysonEnvironmentalSensorState):
-      self.humidity.labels(name=name, serial=serial).set(message.humidity)
-      self.temperature.labels(name=name, serial=serial).set(message.temperature - 273.2)
-      self.voc.labels(name=name, serial=serial).set(message.volatil_organic_compounds)
-      self.dust.labels(name=name, serial=serial).set(message.dust)
-    elif isinstance(message, dyson_pure_state.DysonPureCoolState):
-      self.fan_mode.labels(name=name, serial=serial).state(message.fan_mode)
-      self.fan_state.labels(name=name, serial=serial).state(message.fan_state)
+    def monitor(self, update_fn: Callable[[str, str, object], None], only_active=True) -> None:
+        """Sets up a background monitoring thread on each device.
 
-      speed = message.speed
-      if speed == 'AUTO':
-        speed = -1
-      self.fan_speed.labels(name=name, serial=serial).set(speed)
+        Args:
+          update_fn: callback function that will receive the device name, serial number, and
+              Dyson*State message for each update event from a device.
+          only_active: if True, will only setup monitoring on "active" devices.
+        """
+        devices = self._account.devices()
+        for dev in devices:
+            if only_active and not dev.active:
+                logging.info('Found device "%s" (serial=%s) but is not active; skipping',
+                             dev.name, dev.serial)
+                continue
 
-      # Convert filter_life from hours to seconds
-      filter_life = int(message.filter_life) * 60 * 60
+            connected = dev.auto_connect()
+            if not connected:
+                logging.error('Could not connect to device "%s" (serial=%s); skipping',
+                              dev.name, dev.serial)
+                continue
 
-      self.oscillation.labels(name=name, serial=serial).state(message.oscillation)
-      self.quality_target.labels(name=name, serial=serial).set(message.quality_target)
-      self.filter_life.labels(name=name, serial=serial).set(filter_life)
+            logging.info('Monitoring "%s" (serial=%s)', dev.name, dev.serial)
+            wrapped_fn = functools.partial(update_fn, dev.name, dev.serial)
 
-      # Metrics only available with DysonPureHotCoolState
-      if isinstance(message, dyson_pure_state.DysonPureHotCoolState):
-        # Convert from Decicelsius to Kelvin.
-        heat_target = int(message.heat_target) / 10 - 273.2
+            # Populate initial state values. Without this, we'll run without fan operating
+            # state until the next change event (which could be a while).
+            wrapped_fn(dev.state)
+            dev.add_message_listener(wrapped_fn)
 
-        self.focus_mode.labels(name=name, serial=serial).state(message.focus_mode)
-        self.heat_mode.labels(name=name, serial=serial).state(message.heat_mode)
-        self.heat_state.labels(name=name, serial=serial).state(message.heat_state)
-        self.heat_target.labels(name=name, serial=serial).set(heat_target)
-    else:
-      logging.warning('Received unknown update from "%s" (serial=%s): %s; ignoring',
-                      name, serial, type(message))
-
-
-class DysonClient():
-  """Connects to and monitors Dyson fans."""
-  def __init__(self, username, password, country):
-    self.username = username
-    self.password = password
-    self.country = country
-
-    self._account = None
-
-  def login(self) -> bool:
-    """Attempts a login to DysonLink, returns True on success (False otherwise)."""
-    self._account = dyson.DysonAccount(self.username, self.password, self.country)
-    if not self._account.login():
-      logging.critical('Could not login to Dyson with username %s', self.username)
-      return False
-
-    return True
-
-  def monitor(self, update_fn: Callable[[str, str, object], None], only_active=True) -> None:
-    """Sets up a background monitoring thread on each device.
-
-    Args:
-      update_fn: callback function that will receive the device name, serial number, and
-          Dyson*State message for each update event from a device.
-      only_active: if True, will only setup monitoring on "active" devices.
-    """
-    devices = self._account.devices()
-    for dev in devices:
-      if only_active and not dev.active:
-        logging.info('Found device "%s" (serial=%s) but is not active; skipping',
-                     dev.name, dev.serial)
-        continue
-
-      connected = dev.auto_connect()
-      if not connected:
-        logging.error('Could not connect to device "%s" (serial=%s); skipping',
-                      dev.name, dev.serial)
-        continue
-
-      logging.info('Monitoring "%s" (serial=%s)', dev.name, dev.serial)
-      wrapped_fn = functools.partial(update_fn, dev.name, dev.serial)
-
-      # Populate initial state values. Without this, we'll run without fan operating
-      # state until the next change event (which could be a while).
-      wrapped_fn(dev.state)
-      dev.add_message_listener(wrapped_fn)
 
 def _sleep_forever() -> None:
-  """Sleeps the calling thread until a keyboard interrupt occurs."""
-  while True:
-    try:
-      time.sleep(1)
-    except KeyboardInterrupt:
-      break
+    """Sleeps the calling thread until a keyboard interrupt occurs."""
+    while True:
+        try:
+            time.sleep(1)
+        except KeyboardInterrupt:
+            break
+
 
 def _read_config(filename):
-  """Reads configuration file. Returns DysonLinkCredentials or None on error."""
-  config = configparser.ConfigParser()
+    """Reads configuration file.
 
-  logging.info('Reading "%s"', filename)
+    Returns DysonLinkCredentials or None on error.
+    """
+    config = configparser.ConfigParser()
 
-  try:
-    config.read(filename)
-  except configparser.Error as ex:
-    logging.critical('Could not read "%s": %s', filename, ex)
+    logging.info('Reading "%s"', filename)
+
+    try:
+        config.read(filename)
+    except configparser.Error as ex:
+        logging.critical('Could not read "%s": %s', filename, ex)
+        return None
+
+    try:
+        username = config['Dyson Link']['username']
+        password = config['Dyson Link']['password']
+        country = config['Dyson Link']['country']
+        return DysonLinkCredentials(username, password, country)
+    except KeyError as ex:
+        logging.critical('Required key missing in "%s": %s', filename, ex)
+
     return None
 
-  try:
-    username = config['Dyson Link']['username']
-    password = config['Dyson Link']['password']
-    country = config['Dyson Link']['country']
-    return DysonLinkCredentials(username, password, country)
-  except KeyError as ex:
-    logging.critical('Required key missing in "%s": %s', filename, ex)
-
-  return None
 
 def main(argv):
-  """Main body of the program."""
-  parser = argparse.ArgumentParser(prog=argv[0])
-  parser.add_argument('--port', help='HTTP server port', type=int, default=8091)
-  parser.add_argument('--config', help='Configuration file (INI file)', default='config.ini')
-  parser.add_argument('--log_level', help='Logging level (DEBUG, INFO, WARNING, ERROR)', type=str, default='INFO')
-  parser.add_argument(
-    '--include_inactive_devices',
-    help='Only monitor devices marked as "active" in the Dyson API',
-    action='store_true')
-  args = parser.parse_args()
+    """Main body of the program."""
+    parser = argparse.ArgumentParser(prog=argv[0])
+    parser.add_argument('--port', help='HTTP server port',
+                        type=int, default=8091)
+    parser.add_argument(
+        '--config', help='Configuration file (INI file)', default='config.ini')
+    parser.add_argument(
+        '--log_level', help='Logging level (DEBUG, INFO, WARNING, ERROR)', type=str, default='INFO')
+    parser.add_argument(
+        '--include_inactive_devices',
+        help='Monitor devices marked as inactive by Dyson (default is only active)',
+        action='store_true')
+    args = parser.parse_args()
 
-  try:
-    level = getattr(logging, args.log_level)
-  except AttributeError:
-    print(f'Invalid --log_level: {args.log_level}')
-    exit(-1)
-  args = parser.parse_args()
+    try:
+        level = getattr(logging, args.log_level)
+    except AttributeError:
+        print(f'Invalid --log_level: {args.log_level}')
+        sys.exit(-1)
+    args = parser.parse_args()
 
-  logging.basicConfig(
-      format='%(asctime)s %(levelname)10s %(message)s',
-      datefmt='%Y/%m/%d %H:%M:%S',
-      level=level)
+    logging.basicConfig(
+        format='%(asctime)s %(levelname)10s %(message)s',
+        datefmt='%Y/%m/%d %H:%M:%S',
+        level=level)
 
-  logging.info('Starting up on port=%s', args.port)
+    logging.info('Starting up on port=%s', args.port)
 
-  if args.include_inactive_devices:
-    logging.info('Including devices marked "inactive" from the Dyson API')
+    if args.include_inactive_devices:
+        logging.info('Including devices marked "inactive" from the Dyson API')
 
-  credentials = _read_config(args.config)
-  if not credentials:
-    exit(-1)
+    credentials = _read_config(args.config)
+    if not credentials:
+        sys.exit(-1)
 
-  metrics = Metrics()
-  prometheus_client.start_http_server(args.port)
+    metrics = Metrics()
+    prometheus_client.start_http_server(args.port)
 
-  client = DysonClient(credentials.username, credentials.password, credentials.country)
-  if not client.login():
-    exit(-1)
+    client = DysonClient(credentials.username,
+                         credentials.password, credentials.country)
+    if not client.login():
+        sys.exit(-1)
 
-  client.monitor(metrics.update, only_active=not args.include_inactive_devices)
-  _sleep_forever()
+    client.monitor(
+        metrics.update, only_active=not args.include_inactive_devices)
+    _sleep_forever()
+
 
 if __name__ == '__main__':
-  main(sys.argv)
+    main(sys.argv)
