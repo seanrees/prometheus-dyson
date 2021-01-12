@@ -213,7 +213,10 @@ class Metrics:
         update_enum(self.fan_power, name, serial, power)
 
         oscillation_state = message.oscillation
-        if message.fan_mode == const.FanMode.AUTO.value and message.fan_state == const.FanState.FAN_OFF:
+        oscillation_on = message.oscillation == const.Oscillation.OSCILLATION_ON.value
+        auto_on = message.fan_mode == const.FanMode.AUTO.value
+        fan_off = message.fan_state == const.FanState.FAN_OFF.value
+        if oscillation_on and auto_on and fan_off:
             # Compatibility with V2's behaviour for this value.
             oscillation_state = _OscillationState.IDLE.value
 
