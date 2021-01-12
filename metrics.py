@@ -1,5 +1,6 @@
 """Creates and maintains Prometheus metric values."""
 
+import enum
 import logging
 
 from libpurecool import const, dyson_pure_state, dyson_pure_state_v2
@@ -22,6 +23,13 @@ def update_gauge(gauge, name: str, serial: str, value):
 
 def update_enum(enum, name: str, serial: str, state):
     enum.labels(name=name, serial=serial).state(state)
+
+
+class _OscillationState(enum.Enum):
+    """On V2 devices, oscillation_status can return 'IDLE' in auto mode."""
+    ON = 'ON'
+    OFF = 'OFF'
+    IDLE = 'IDLE'
 
 
 class Metrics:
@@ -71,7 +79,9 @@ class Metrics:
         self.fan_speed = make_gauge(
             'dyson_fan_speed_units', 'Current speed of fan (-1 = AUTO)')
         self.oscillation = make_enum(
-            'dyson_oscillation_mode', 'Current oscillation mode', const.Oscillation)
+            'dyson_oscillation_mode', 'Current oscillation mode (will the fan move?)', const.Oscillation)
+        self.oscillation_state = make_enum(
+            'dyson_oscillation_state', 'Current oscillation state (is the fan moving?)', _OscillationState)
         self.night_mode = make_enum(
             'dyson_night_mode', 'Night mode', const.NightMode)
         self.heat_mode = make_enum(
@@ -188,7 +198,6 @@ class Metrics:
         self.updatePureCoolStateCommon(name, serial, message)
 
         update_enum(self.fan_mode, name, serial, message.fan_mode)
-        update_enum(self.oscillation, name, serial, message.oscillation)
         update_gauge(self.quality_target, name,
                      serial, message.quality_target)
 
@@ -202,6 +211,14 @@ class Metrics:
 
         update_enum(self.auto_mode, name, serial, auto)
         update_enum(self.fan_power, name, serial, power)
+
+        oscillation_state = message.oscillation
+        if message.fan_mode == const.FanMode.AUTO.value and message.fan_state == const.FanState.FAN_OFF:
+            # Compatibility with V2's behaviour for this value.
+            oscillation_state = _OscillationState.IDLE.value
+
+        update_enum(self.oscillation, name, serial, message.oscillation)
+        update_enum(self.oscillation_state, name, serial, oscillation_state)
 
         # Convert filter_life from hours to seconds.
         filter_life = int(message.filter_life) * 60 * 60
@@ -228,10 +245,26 @@ class Metrics:
         update_gauge(self.night_mode_speed, name, serial,
                      int(message.night_mode_speed))
 
-        # V2 provides oscillation_status and oscillation as fields,
-        # oscillation_status provides values compatible with V1, so we use that.
-        # oscillation returns as 'OION', 'OIOF.'
-        update_enum(self.oscillation, name, serial,
+        # V2 devices differentiate between _current_ oscillation status ('on', 'off', 'idle')
+        # and configured mode ('on', 'off'). This is roughly the difference between
+        # "is it oscillating right now" (oscillation_status) and "will it oscillate" (oscillation).
+        #
+        # This issue https://github.com/etheralm/libpurecool/issues/4#issuecomment-563358021
+        # seems to indicate that oscillation can be one of the OscillationV2 values (OION, OIOF)
+        # or one of the Oscillation values (ON, OFF) -- so support and translate both.
+        v2_to_v1_map = {
+            const.OscillationV2.OSCILLATION_ON.value: const.Oscillation.OSCILLATION_ON.value,
+            const.OscillationV2.OSCILLATION_OFF.value: const.Oscillation.OSCILLATION_OFF.value,
+            const.Oscillation.OSCILLATION_ON.value: const.Oscillation.OSCILLATION_ON.value,
+            const.Oscillation.OSCILLATION_OFF.value: const.Oscillation.OSCILLATION_OFF.value
+        }
+        oscillation = v2_to_v1_map.get(message.oscillation, None)
+        if oscillation:
+            update_enum(self.oscillation, name, serial, oscillation)
+        else:
+            logging.warning('Received unknown oscillation setting from "%s" (serial=%s): %s; ignoring',
+                            name, serial, message.oscillation)
+        update_enum(self.oscillation_state, name, serial,
                     message.oscillation_status)
         update_gauge(self.oscillation_angle_low, name,
                      serial, int(message.oscillation_angle_low))

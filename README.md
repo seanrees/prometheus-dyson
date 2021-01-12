@@ -55,7 +55,8 @@ dyson_fan_power | enum | all | ON if the fan is powered on, OFF otherwise
 dyson_auto_mode | enum | all | ON if the fan is in auto mode, OFF otherwise
 dyson_fan_state | enum | all |  FAN, OFF (what the fan is actually doing)
 dyson_fan_speed_units | gauge | all | 0-10 (or -1 if on AUTO)
-dyson_oscillation_mode | enum | all |  ON if the fan is oscillating, OFF otherwise
+dyson_oscillation_mode | enum | all |  ON if the fan in oscillation mode, OFF otherwise
+dyson_oscillation_state | enum | all | ON, OFF, IDLE. ON means the fan is currently oscillating, IDLE means the fan is in auto mode and the fan is paused
 dyson_oscillation_angle_low_degrees | gauge | V2 fans only | low angle of oscillation in degrees
 dyson_oscillation_angle_high_degrees | gauge | V2 fans only | high angle of oscillation in degrees
 dyson_night_mode | enum | all | ON if the fan is in night mode, OFF otherwise
