@@ -280,9 +280,11 @@ class Metrics:
             fan_mode = 'AUTO'
         elif message.fan_power == const.FanPower.POWER_ON.value:
             fan_mode = 'FAN'
+        elif message.fan_power == const.FanPower.POWER_OFF.value:
+            pass
         else:
-            logging.warning('Received unknown fan_power setting from "%s" (serial=%s): %s, defaulting to "%s',
-                            name, serial, message.fan_mode, fan_mode)
+            logging.warning('Received unknown fan_power setting from "%s" (serial=%s): "%s", defaulting to "%s"',
+                            name, serial, message.fan_power, fan_mode)
         update_enum(self.fan_mode, name, serial, fan_mode)
 
         if isinstance(message, dyson_pure_state_v2.DysonPureHotCoolV2State):
