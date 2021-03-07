@@ -1,6 +1,44 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
-load("@pip_deps//:requirements.bzl", "requirement")
+load("@pip//:requirements.bzl", "requirement")
 load("@rules_pkg//:pkg.bzl", "pkg_tar", "pkg_deb")
+
+py_library(
+    name = "account",
+    srcs = ["account.py"],
+    deps = [
+        requirement("libdyson"),
+    ],
+)
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+)
+
+py_test(
+    name = "config_test",
+    srcs = ["config_test.py"],
+    deps = [
+        ":config",
+    ],
+)
+
+py_library(
+    name = "libpurecool_adapter",
+    srcs = ["libpurecool_adapter.py"],
+    deps = [
+        requirement("libpurecool"),
+    ],
+)
+
+py_test(
+    name = "libpurecool_adapter_test",
+    srcs = ["libpurecool_adapter_test.py"],
+    deps = [
+        ":libpurecool_adapter",
+        requirement("libpurecool"),
+    ],
+)
 
 py_library(
     name = "metrics",
@@ -24,8 +62,10 @@ py_binary(
     name = "main",
     srcs = ["main.py"],
     deps = [
+        ":account",
+        ":config",
+        ":libpurecool_adapter",
         ":metrics",
-        requirement("libpurecool"),
         requirement("prometheus_client")
     ],
 )
@@ -85,5 +125,5 @@ pkg_deb(
     description_file = "debian/description",
     maintainer = "Sean Rees <sean at erifax.org>",
     package = "prometheus-dyson",
-    version = "0.0.2",
+    version = "0.1.0",
 )

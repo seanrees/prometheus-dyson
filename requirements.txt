@@ -1,2 +1,3 @@
-libpurecool
 prometheus_client
+libpurecool
+libdyson

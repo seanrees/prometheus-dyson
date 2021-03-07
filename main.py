@@ -6,46 +6,27 @@ libpurecool   pip install prometheus_client
 """
 
 import argparse
-import collections
-import configparser
 import functools
 import logging
 import sys
 import time
 
-from typing import Callable, Dict, Optional, Tuple
+from typing import Callable, Dict, List, Optional
 
-from libpurecool import dyson
 import prometheus_client                    # type: ignore[import]
 
+import account
+import config
+import libpurecool_adapter
 from metrics import Metrics
-
-DysonLinkCredentials = collections.namedtuple(
-    'DysonLinkCredentials', ['username', 'password', 'country'])
 
 
 class DysonClient:
     """Connects to and monitors Dyson fans."""
 
-    def __init__(self, username, password, country, hosts: Optional[Dict] = None):
-        self.username = username
-        self.password = password
-        self.country = country
+    def __init__(self, device_cache: List[Dict[str, str]], hosts: Optional[Dict] = None):
+        self._account = libpurecool_adapter.DysonAccountCache(device_cache)
         self.hosts = hosts or {}
-
-        self._account = None
-
-    def login(self) -> bool:
-        """Attempts a login to DysonLink, returns True on success (False
-        otherwise)."""
-        self._account = dyson.DysonAccount(
-            self.username, self.password, self.country)
-        if not self._account.login():
-            logging.critical(
-                'Could not login to Dyson with username %s', self.username)
-            return False
-
-        return True
 
     def monitor(self, update_fn: Callable[[str, str, object], None], only_active=True) -> None:
         """Sets up a background monitoring thread on each device.
@@ -94,45 +75,6 @@ def _sleep_forever() -> None:
             break
 
 
-def _read_config(filename) -> Tuple[Optional[DysonLinkCredentials], Dict]:
-    """Reads configuration file.
-
-    Returns DysonLinkCredentials or None on error, and a dict
-    of configured device serial numbers mapping to IP addresses
-    """
-    config = configparser.ConfigParser()
-
-    logging.info('Reading "%s"', filename)
-
-    try:
-        config.read(filename)
-    except configparser.Error as ex:
-        logging.critical('Could not read "%s": %s', filename, ex)
-        return None, {}
-
-    try:
-        username = config['Dyson Link']['username']
-        password = config['Dyson Link']['password']
-        country = config['Dyson Link']['country']
-        creds = DysonLinkCredentials(username, password, country)
-    except KeyError as ex:
-        logging.critical('Required key missing in "%s": %s', filename, ex)
-        return None, {}
-
-    try:
-        hosts = config.items('Hosts')
-    except configparser.NoSectionError:
-        hosts = []
-        logging.debug('No "Devices" section found in config file, no manual IP overrides are available')
-
-    # Convert the hosts tuple (('serial0', 'ip0'), ('serial1', 'ip1'))
-    # into a dict {'SERIAL0': 'ip0', 'SERIAL1': 'ip1'}, making sure that
-    # the serial keys are upper case (configparser downcases everything)
-    host_dict = {h[0].upper(): h[1] for h in hosts}
-
-    return creds, host_dict
-
-
 def main(argv):
     """Main body of the program."""
     parser = argparse.ArgumentParser(prog=argv[0])
@@ -140,6 +82,8 @@ def main(argv):
                         type=int, default=8091)
     parser.add_argument(
         '--config', help='Configuration file (INI file)', default='config.ini')
+    parser.add_argument('--create_device_cache',
+                        help='Performs a one-time login to Dyson to locally cache device information. Use this for the first invocation of this binary or when you add/remove devices.', action='store_true')
     parser.add_argument(
         '--log_level', help='Logging level (DEBUG, INFO, WARNING, ERROR)', type=str, default='INFO')
     parser.add_argument(
@@ -165,18 +109,28 @@ def main(argv):
     if args.include_inactive_devices:
         logging.info('Including devices marked "inactive" from the Dyson API')
 
-    credentials, hosts = _read_config(args.config)
-    if not credentials:
+    try:
+        cfg = config.Config(args.config)
+    except:
+        logging.exception('Could not load configuration: %s', args.config)
         sys.exit(-1)
+
+    devices = cfg.devices
+    if not len(devices):
+        logging.fatal(
+            'No devices configured; please re-run this program with --create_device_cache.')
+        sys.exit(-2)
+
+    if args.create_device_cache:
+        logging.info(
+            '--create_device_cache supplied; breaking out to perform this.')
+        account.generate_device_cache(cfg.dyson_credentials, args.config)
+        sys.exit(0)
 
     metrics = Metrics()
     prometheus_client.start_http_server(args.port)
 
-    client = DysonClient(credentials.username,
-                         credentials.password, credentials.country, hosts)
-    if not client.login():
-        sys.exit(-1)
-
+    client = DysonClient(devices, cfg.hosts)
     client.monitor(
         metrics.update, only_active=not args.include_inactive_devices)
     _sleep_forever()
