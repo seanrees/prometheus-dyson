@@ -6,6 +6,35 @@ the V1 model (reports VOC and Dust) and the V2 models (those that report
 PM2.5, PM10, NOx, and VOC). Other Dyson fans may work out of the box or with
 minor modifications.
 
+## Help! It stopped working!
+
+_(Updated: 7th March 2021)_
+
+Hi! If you use this and it's not working now (but it was before), you're likely
+affected by etheralm/libpurecool#37. The long-and-short of it is that Dyson
+changed their _unpublished_ online API, which broke `libpurecool` which we
+rely on. You won't notice this breakage until you try to restart
+prometheus-dyson.
+
+There is an _experimental_ fix in the libdyson branch. This begins a process
+of switching this exporter over toto shenxn/libdyson (which should provide for
+long-term stability against this type of problem).
+
+To give it a go (once you've checked out the most recent source):
+
+1. Build from the `libdyson` branch
+1. Run the binary with `--create_device_cache`, follow the prompts
+   and add the generated configuration to your prometheus-dyson.ini.
+1. Restart the service as normal.
+
+Rough set of steps:
+```
+% git clone https://github.com/seanrees/prometheus-dyson.git prometheus-dyson
+% cd prometheus-dyson
+% git checkout libdyson
+% bazel run :main -- --config=path-to-your-config.ini --create_device_cache
+```
+
 ## Build
 
 ```
