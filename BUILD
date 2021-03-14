@@ -1,6 +1,6 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("@pip//:requirements.bzl", "requirement")
-load("@rules_pkg//:pkg.bzl", "pkg_tar", "pkg_deb")
+load("@rules_pkg//:pkg.bzl", "pkg_deb", "pkg_tar")
 
 py_library(
     name = "account",
@@ -45,7 +45,7 @@ py_library(
     srcs = ["metrics.py"],
     deps = [
         requirement("libpurecool"),
-        requirement("prometheus_client")
+        requirement("prometheus_client"),
     ],
 )
 
@@ -55,9 +55,10 @@ py_test(
     deps = [
         ":metrics",
         requirement("libpurecool"),
-        requirement("prometheus_client")
+        requirement("prometheus_client"),
     ],
 )
+
 py_binary(
     name = "main",
     srcs = ["main.py"],
@@ -66,49 +67,50 @@ py_binary(
         ":config",
         ":libpurecool_adapter",
         ":metrics",
-        requirement("prometheus_client")
+        requirement("prometheus_client"),
+        requirement("libdyson"),
     ],
 )
 
 pkg_tar(
     name = "deb-bin",
-    package_dir = "/opt/prometheus-dyson/bin",
     # This depends on --build_python_zip.
     srcs = [":main"],
     mode = "0755",
+    package_dir = "/opt/prometheus-dyson/bin",
 )
 
 pkg_tar(
     name = "deb-config-sample",
-    package_dir = "/etc/prometheus-dyson",
     srcs = ["config-sample.ini"],
     mode = "0644",
+    package_dir = "/etc/prometheus-dyson",
 )
 
 pkg_tar(
     name = "deb-default",
-    package_dir = "/etc/default",
     srcs = ["debian/prometheus-dyson"],
     mode = "0644",
-    strip_prefix = "debian/"
+    package_dir = "/etc/default",
+    strip_prefix = "debian/",
 )
 
 pkg_tar(
     name = "deb-service",
-    package_dir = "/lib/systemd/system",
     srcs = ["debian/prometheus-dyson.service"],
     mode = "0644",
-    strip_prefix = "debian/"
+    package_dir = "/lib/systemd/system",
+    strip_prefix = "debian/",
 )
 
 pkg_tar(
     name = "debian-data",
     deps = [
-      ":deb-bin",
-      ":deb-config-sample",
-      ":deb-default",
-      ":deb-service",
-    ]
+        ":deb-bin",
+        ":deb-config-sample",
+        ":deb-default",
+        ":deb-service",
+    ],
 )
 
 pkg_deb(
@@ -120,10 +122,10 @@ pkg_deb(
     depends = [
         "python3",
     ],
-    prerm = "debian/prerm",
-    postrm = "debian/postrm",
     description_file = "debian/description",
     maintainer = "Sean Rees <sean at erifax.org>",
     package = "prometheus-dyson",
-    version = "0.1.0",
+    postrm = "debian/postrm",
+    prerm = "debian/prerm",
+    version = "0.1.1",
 )

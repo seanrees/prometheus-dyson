@@ -5,8 +5,8 @@ import unittest
 
 import config
 
-empty = ''
-good = """
+EMPTY = ''
+GOOD = """
 [Dyson Link]
 username = Username
 password = Password
@@ -39,17 +39,18 @@ producttype = 455
 
 class TestConfig(unittest.TestCase):
     def setUp(self):
-        self._empty_file = self.createTemporaryFile(empty)
+        self._empty_file = self.create_temporary_file(EMPTY)
         self.empty = config.Config(self._empty_file.name)
 
-        self._good_file = self.createTemporaryFile(good)
+        self._good_file = self.create_temporary_file(GOOD)
         self.good = config.Config(self._good_file.name)
 
     def tearDown(self):
         self._empty_file.close()
         self._good_file.close()
 
-    def createTemporaryFile(self, contents: str):
+    @classmethod
+    def create_temporary_file(cls, contents: str):
         ret = tempfile.NamedTemporaryFile()
         ret.write(contents.encode('utf-8'))
         ret.flush()
@@ -58,10 +59,10 @@ class TestConfig(unittest.TestCase):
     def testDysonCredentials(self):
         self.assertIsNone(self.empty.dyson_credentials)
 
-        c = self.good.dyson_credentials
-        self.assertEqual(c.username, 'Username')
-        self.assertEqual(c.password, 'Password')
-        self.assertEqual(c.country, 'IE')
+        creds = self.good.dyson_credentials
+        self.assertEqual(creds.username, 'Username')
+        self.assertEqual(creds.password, 'Password')
+        self.assertEqual(creds.country, 'IE')
 
     def testHosts(self):
         self.assertTrue(not self.empty.hosts)
@@ -71,8 +72,8 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(len(self.empty.devices), 0)
         self.assertEqual(len(self.good.devices), 2)
 
-        self.assertEqual(self.good.devices[0]['name'], 'Living room')
-        self.assertEqual(self.good.devices[1]['Name'], 'Bedroom')
+        self.assertEqual(self.good.devices[0].name, 'Living room')
+        self.assertEqual(self.good.devices[1].name, 'Bedroom')
 
 
 if __name__ == '__main__':

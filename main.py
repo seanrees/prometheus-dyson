@@ -11,59 +11,103 @@ import logging
 import sys
 import time
 
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict
 
 import prometheus_client                    # type: ignore[import]
+import libdyson                             # type: ignore[import]
 
 import account
 import config
 import libpurecool_adapter
-from metrics import Metrics
+import metrics
 
 
-class DysonClient:
-    """Connects to and monitors Dyson fans."""
+class DeviceWrapper:
+    """Wraps a configured device and holds onto the underlying Dyson device
+    object."""
 
-    def __init__(self, device_cache: List[Dict[str, str]], hosts: Optional[Dict] = None):
-        self._account = libpurecool_adapter.DysonAccountCache(device_cache)
-        self.hosts = hosts or {}
+    def __init__(self, device: config.Device):
+        self._device = device
+        self.libdyson = self._create_libdyson_device()
+        self.libpurecool = self._create_libpurecool_device()
 
-    def monitor(self, update_fn: Callable[[str, str, object], None], only_active=True) -> None:
-        """Sets up a background monitoring thread on each device.
+    @property
+    def name(self) -> str:
+        """Returns device name, e.g; 'Living Room'"""
+        return self._device.name
+
+    @property
+    def serial(self) -> str:
+        """Returns device serial number, e.g; AB1-XX-1234ABCD"""
+        return self._device.serial
+
+    def _create_libdyson_device(self):
+        return libdyson.get_device(self.serial, self._device.credentials, self._device.product_type)
+
+    def _create_libpurecool_device(self):
+        return libpurecool_adapter.get_device(self.name, self.serial,
+                                              self._device.credentials, self._device.product_type)
+
+
+class ConnectionManager:
+    """Manages connections via manual IP or via libdyson Discovery.
+
+    At the moment, callbacks are done via libpurecool.
+
+    Args:
+      update_fn: A callable taking a name, serial, and libpurecool update message
+      hosts: a dict of serial -> IP address, for direct (non-zeroconf) connections.
+    """
+
+    def __init__(self, update_fn: Callable[[str, str, object], None], hosts: Dict[str, str]):
+        self._update_fn = update_fn
+        self._hosts = hosts
+
+        logging.info('Starting discovery...')
+        self._discovery = libdyson.discovery.DysonDiscovery()
+        self._discovery.start_discovery()
+
+    def add_device(self, device: config.Device, add_listener=True):
+        """Adds and connects to a device.
+
+        This will connect directly if the host is specified in hosts at
+        initialisation, otherwise we will attempt discovery via zeroconf.
 
         Args:
-          update_fn: callback function that will receive the device name, serial number, and
-              Dyson*State message for each update event from a device.
-          only_active: if True, will only setup monitoring on "active" devices.
+          device: a config.Device to add
+          add_listener: if True, will add callback listeners. Set to False if
+                        add_device() has been called on this device already.
         """
-        devices = self._account.devices()
-        for dev in devices:
-            if only_active and not dev.active:
-                logging.info('Found device "%s" (serial=%s) but is not active; skipping',
-                             dev.name, dev.serial)
-                continue
+        wrap = DeviceWrapper(device)
 
-            manual_ip = self.hosts.get(dev.serial.upper())
-            if manual_ip:
-                logging.info('Attempting connection to device "%s" (serial=%s) via configured IP %s',
-                             dev.name, dev.serial, manual_ip)
-                connected = dev.connect(manual_ip)
-            else:
-                logging.info('Attempting to discover device "%s" (serial=%s) via zeroconf',
-                             dev.name, dev.serial)
-                connected = dev.auto_connect()
-            if not connected:
-                logging.error('Could not connect to device "%s" (serial=%s); skipping',
-                              dev.name, dev.serial)
-                continue
+        if add_listener:
+            wrap.libpurecool.add_message_listener(
+                functools.partial(self._lpc_callback, wrap))
 
-            logging.info('Monitoring "%s" (serial=%s)', dev.name, dev.serial)
-            wrapped_fn = functools.partial(update_fn, dev.name, dev.serial)
+        manual_ip = self._hosts.get(wrap.serial.upper())
+        if manual_ip:
+            logging.info('Attempting connection to device "%s" (serial=%s) via configured IP %s',
+                         device.name, device.serial, manual_ip)
+            wrap.libpurecool.connect(manual_ip)
+        else:
+            logging.info('Attempting to discover device "%s" (serial=%s) via zeroconf',
+                         device.name, device.serial)
+            callback_fn = functools.partial(self._discovery_callback, wrap)
+            self._discovery.register_device(wrap.libdyson, callback_fn)
 
-            # Populate initial state values. Without this, we'll run without fan operating
-            # state until the next change event (which could be a while).
-            wrapped_fn(dev.state)
-            dev.add_message_listener(wrapped_fn)
+    @classmethod
+    def _discovery_callback(cls, device: DeviceWrapper, address: str):
+        # A note on concurrency: used with DysonDiscovery, this will be called
+        # back in a separate thread created by the underlying zeroconf library.
+        # When we call connect() on libpurecool or libdyson, that code spawns
+        # a new thread for MQTT and returns. In other words: we don't need to
+        # worry about connect() blocking zeroconf here.
+        logging.info('Discovered %s on %s', device.serial, address)
+        device.libpurecool.connect(address)
+
+    def _lpc_callback(self, device: DeviceWrapper, message):
+        logging.debug('Received update from %s: %s', device.serial, message)
+        self._update_fn(device.name, device.serial, message)
 
 
 def _sleep_forever() -> None:
@@ -83,7 +127,12 @@ def main(argv):
     parser.add_argument(
         '--config', help='Configuration file (INI file)', default='config.ini')
     parser.add_argument('--create_device_cache',
-                        help='Performs a one-time login to Dyson to locally cache device information. Use this for the first invocation of this binary or when you add/remove devices.', action='store_true')
+                        help=('Performs a one-time login to Dyson\'s cloud service '
+                              'to identify your devices. This produces a config snippet '
+                              'to add to your config, which will be used to connect to '
+                              'your device. Use this when you first use this program and '
+                              'when you add or remove devices.'),
+                        action='store_true')
     parser.add_argument(
         '--log_level', help='Logging level (DEBUG, INFO, WARNING, ERROR)', type=str, default='INFO')
     parser.add_argument(
@@ -100,14 +149,15 @@ def main(argv):
     args = parser.parse_args()
 
     logging.basicConfig(
-        format='%(asctime)s %(levelname)10s %(message)s',
+        format='%(asctime)s [%(thread)d] %(levelname)10s %(message)s',
         datefmt='%Y/%m/%d %H:%M:%S',
         level=level)
 
     logging.info('Starting up on port=%s', args.port)
 
     if args.include_inactive_devices:
-        logging.info('Including devices marked "inactive" from the Dyson API')
+        logging.warning(
+            '--include_inactive_devices is now inoperative and will be removed in a future release')
 
     try:
         cfg = config.Config(args.config)
@@ -116,7 +166,7 @@ def main(argv):
         sys.exit(-1)
 
     devices = cfg.devices
-    if not len(devices):
+    if len(devices) == 0:
         logging.fatal(
             'No devices configured; please re-run this program with --create_device_cache.')
         sys.exit(-2)
@@ -127,12 +177,12 @@ def main(argv):
         account.generate_device_cache(cfg.dyson_credentials, args.config)
         sys.exit(0)
 
-    metrics = Metrics()
     prometheus_client.start_http_server(args.port)
 
-    client = DysonClient(devices, cfg.hosts)
-    client.monitor(
-        metrics.update, only_active=not args.include_inactive_devices)
+    connect_mgr = ConnectionManager(metrics.Metrics().update, cfg.hosts)
+    for dev in devices:
+        connect_mgr.add_device(dev)
+
     _sleep_forever()
 
 

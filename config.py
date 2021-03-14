@@ -2,20 +2,28 @@
 
 import collections
 import configparser
-import copy
 import logging
 from typing import Dict, List, Optional
+
+Device = collections.namedtuple(
+    'Device', ['name', 'serial', 'credentials', 'product_type'])
 
 DysonLinkCredentials = collections.namedtuple(
     'DysonLinkCredentials', ['username', 'password', 'country'])
 
 
 class Config:
+    """Reads the configuration file and provides handy accessors.
+
+    Args:
+      filename: path (absolute or relative) to the config file (ini format).
+    """
     def __init__(self, filename: str):
         self._filename = filename
         self._config = self.load(filename)
 
-    def load(self, filename: str):
+    @classmethod
+    def load(cls, filename: str):
         """Reads configuration file.
 
         Returns DysonLinkCredentials or None on error, and a dict of
@@ -35,6 +43,17 @@ class Config:
 
     @property
     def dyson_credentials(self) -> Optional[DysonLinkCredentials]:
+        """Cloud Dyson API credentials.
+
+        In the config, this looks like:
+        [Dyson Link]
+        username = user
+        password = pass
+        country = XX
+
+        Returns:
+          DysonLinkCredentials.
+        """
         try:
             username = self._config['Dyson Link']['username']
             password = self._config['Dyson Link']['password']
@@ -68,7 +87,7 @@ class Config:
         return {h[0].upper(): h[1] for h in hosts}
 
     @property
-    def devices(self) -> List[object]:
+    def devices(self) -> List[Device]:
         """Consumes all sections looking for device entries.
 
         A device looks a bit like this:
@@ -80,19 +99,20 @@ class Config:
         ... (and a few other fields)
 
         Returns:
-          A list of dict-like objects. This interface is unstable; do not rely on it.
+          A list of Device objects.
         """
         sections = self._config.sections()
 
         ret = []
-        for s in sections:
-            if not self._config.has_option(s, 'LocalCredentials'):
+        for sect in sections:
+            if not self._config.has_option(sect, 'LocalCredentials'):
                 # This is probably not a device entry, so ignore it.
                 continue
 
-            # configparser returns a dict-like type here with case-insensitive keys. This is an effective
-            # stand-in for the type that libpurecool expects, and a straightforward to thing to change
-            # as we move towards libdyson's API.
-            ret.append(copy.deepcopy(self._config[s]))
+            ret.append(Device(
+                self._config[sect]['Name'],
+                self._config[sect]['Serial'],
+                self._config[sect]['LocalCredentials'],
+                self._config[sect]['ProductType']))
 
         return ret
