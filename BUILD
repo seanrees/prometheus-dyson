@@ -24,27 +24,10 @@ py_test(
 )
 
 py_library(
-    name = "libpurecool_adapter",
-    srcs = ["libpurecool_adapter.py"],
-    deps = [
-        requirement("libpurecool"),
-    ],
-)
-
-py_test(
-    name = "libpurecool_adapter_test",
-    srcs = ["libpurecool_adapter_test.py"],
-    deps = [
-        ":libpurecool_adapter",
-        requirement("libpurecool"),
-    ],
-)
-
-py_library(
     name = "metrics",
     srcs = ["metrics.py"],
     deps = [
-        requirement("libpurecool"),
+        requirement("libdyson"),
         requirement("prometheus_client"),
     ],
 )
@@ -54,7 +37,7 @@ py_test(
     srcs = ["metrics_test.py"],
     deps = [
         ":metrics",
-        requirement("libpurecool"),
+        requirement("libdyson"),
         requirement("prometheus_client"),
     ],
 )
@@ -65,7 +48,6 @@ py_binary(
     deps = [
         ":account",
         ":config",
-        ":libpurecool_adapter",
         ":metrics",
         requirement("prometheus_client"),
         requirement("libdyson"),
@@ -92,7 +74,7 @@ pkg_tar(
     srcs = ["debian/prometheus-dyson"],
     mode = "0644",
     package_dir = "/etc/default",
-    strip_prefix = "debian/",
+    strip_prefix = "/debian",
 )
 
 pkg_tar(
@@ -100,7 +82,7 @@ pkg_tar(
     srcs = ["debian/prometheus-dyson.service"],
     mode = "0644",
     package_dir = "/lib/systemd/system",
-    strip_prefix = "debian/",
+    strip_prefix = "/debian",
 )
 
 pkg_tar(
@@ -115,7 +97,7 @@ pkg_tar(
 
 pkg_deb(
     name = "main-deb",
-    # libpurecool has native deps.
+    # libdyson includes native deps.
     architecture = "amd64",
     built_using = "bazel",
     data = ":debian-data",
@@ -127,5 +109,5 @@ pkg_deb(
     package = "prometheus-dyson",
     postrm = "debian/postrm",
     prerm = "debian/prerm",
-    version = "0.1.1",
+    version = "0.2.0",
 )
