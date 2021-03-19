@@ -6,33 +6,18 @@ the V1 model (reports VOC and Dust) and the V2 models (those that report
 PM2.5, PM10, NOx, and VOC). Other Dyson fans may work out of the box or with
 minor modifications.
 
-## Help! It stopped working!
+## Updating instructions for 0.2.0
 
-_(Updated: 7th March 2021)_
+Due to changes in Dyson's Cloud API, automatic device detection based on your
+Dyson login/password no longer works reliably.
 
-Hi! If you use this and it's not working now (but it was before), you're likely
-affected by etheralm/libpurecool#37. The long-and-short of it is that Dyson
-changed their _unpublished_ online API, which broke `libpurecool` which we
-rely on. You won't notice this breakage until you try to restart
-prometheus-dyson.
+This means you need to take a _one-time_ manual step to upgrade. The upside
+to this is that it removes the runtime dependency on the Dyson API, because
+it will cache the device information locally.
 
-There is an _experimental_ fix in the libdyson branch. This begins a process
-of switching this exporter over toto shenxn/libdyson (which should provide for
-long-term stability against this type of problem).
-
-To give it a go (once you've checked out the most recent source):
-
-1. Build from the `libdyson` branch
-1. Run the binary with `--create_device_cache`, follow the prompts
-   and add the generated configuration to your prometheus-dyson.ini.
-1. Restart the service as normal.
-
-Rough set of steps:
+The manual step is to run this command and follow the prompts:
 ```
-% git clone https://github.com/seanrees/prometheus-dyson.git prometheus-dyson
-% cd prometheus-dyson
-% git checkout libdyson
-% bazel run :main -- --config=path-to-your-config.ini --create_device_cache
+% /opt/prometheus-dyson/bin/main --create_device_cache
 ```
 
 ## Build
@@ -55,7 +40,7 @@ directory). This is _optional_ and not required.
 You'll need these dependencies:
 
 ```
-% pip install libpurecool
+% pip install libdyson
 % pip install prometheus_client
 ```
 
@@ -107,32 +92,55 @@ dyson_continuous_monitoring_mode | gauge | V2 fans only | continuous monitoring 
 This script reads `config.ini` (or another file, specified with `--config`)
 for your DysonLink login credentials.
 
+#### Device Configuration
+
+Devices must be specifically listed in your `config.ini`. You can create this
+automatically by running the binary with `--create_device_cache` and following
+the prompts. A device entry looks like this:
+
+```
+[XX1-ZZ-ABC1234A]
+active = true
+name = My Fan
+serial = XX1-ZZ-ABC1234A
+version = 21.04.03
+localcredentials = a_random_looking_string==
+autoupdate = True
+newversionavailable = True
+producttype = 455
+```
+
+#### Manual IP Overrides
+
+By default, fans are auto-detected with Zeroconf. It is possible to provide
+manual IP overrides in the configuraton however in the `Hosts` section.
+
+```
+[Hosts]
+XX1-ZZ-ABC1234A = 10.10.100.55
+```
+
 ### Args
 ```
 % ./prometheus_dyson.py --help
-usage: ./prometheus_dyson.py [-h] [--port PORT] [--config CONFIG] [--log_level LOG_LEVEL] [--include_inactive_devices]
+usage: ./prometheus_dyson.py [-h] [--port PORT] [--config CONFIG] [--create_device_cache] [--log_level LOG_LEVEL]
 
 optional arguments:
   -h, --help            show this help message and exit
   --port PORT           HTTP server port
   --config CONFIG       Configuration file (INI file)
+  --create_device_cache
+                        Performs a one-time login to Dyson's cloud service to identify your devices. This produces
+                        a config snippet to add to your config, which will be used to connect to your device. Use
+                        this when you first use this program and when you add or remove devices.
   --log_level LOG_LEVEL
                         Logging level (DEBUG, INFO, WARNING, ERROR)
-  --include_inactive_devices
-                        Monitor devices marked as inactive by Dyson (default is only active)
 ```
 
 ### Scrape Frequency
 
-Metrics are updated at approximately 30 second intervals by `libpurecool`.
+Environmental metrics are updated at approximately 30 second intervals.
 Fan state changes (e.g; FAN -> HEAT) are published ~immediately on change.
-
-### Other Notes
-
-`libpurecool` by default uses a flavour of mDNS to automatically discover
-the Dyson fan. If automatic discovery isn't available on your network, it is possible
-to specify IP addresses mapped to device serial numbers in config.ini - see
-`config-sample.ini` for usage.
 
 ## Dashboard
 

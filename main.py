@@ -1,88 +1,156 @@
 #!/usr/bin/python3
-"""Exports Dyson Pure Hot+Cool (DysonLink) statistics as Prometheus metrics.
-
-This module depends on two libraries to function:   pip install
-libpurecool   pip install prometheus_client
-"""
+"""Exports Dyson Pure Hot+Cool (DysonLink) statistics as Prometheus metrics."""
 
 import argparse
-import collections
-import configparser
 import functools
 import logging
 import sys
 import time
+import threading
 
-from typing import Callable, Dict, Optional, Tuple
+from typing import Callable, Dict, List
 
-from libpurecool import dyson
-import prometheus_client                    # type: ignore[import]
+import prometheus_client
+import libdyson
+import libdyson.dyson_device
+import libdyson.exceptions
 
-from metrics import Metrics
+import account
+import config
+import metrics
 
-DysonLinkCredentials = collections.namedtuple(
-    'DysonLinkCredentials', ['username', 'password', 'country'])
+
+class DeviceWrapper:
+    """Wrapper for a config.Device.
+
+    This class has two main purposes:
+      1) To associate a device name & libdyson.DysonFanDevice together
+      2) To start background thread that asks the DysonFanDevice for updated
+         environmental data on a periodic basis.
+
+    Args:
+      device: a config.Device to wrap
+      environment_refresh_secs: how frequently to refresh environmental data
+    """
+
+    def __init__(self, device: config.Device, environment_refresh_secs=30):
+        self._config_device = device
+        self._environment_refresh_secs = environment_refresh_secs
+        self.libdyson = self._create_libdyson_device()
+
+    @property
+    def name(self) -> str:
+        """Returns device name, e.g; 'Living Room'."""
+        return self._config_device.name
+
+    @property
+    def serial(self) -> str:
+        """Returns device serial number, e.g; AB1-XX-1234ABCD."""
+        return self._config_device.serial
+
+    @property
+    def is_connected(self) -> bool:
+        """True if we're connected to the Dyson device."""
+        return self.libdyson.is_connected
+
+    def connect(self, host: str):
+        """Connect to the device and start the environmental monitoring timer."""
+        self.libdyson.connect(host)
+        self._refresh_timer()
+
+    def disconnect(self):
+        """Disconnect from the Dyson device."""
+        self.libdyson.disconnect()
+
+    def _refresh_timer(self):
+        timer = threading.Timer(self._environment_refresh_secs,
+                                self._timer_callback)
+        timer.start()
+
+    def _timer_callback(self):
+        if self.is_connected:
+            logging.debug(
+                'Requesting updated environmental data from %s', self.serial)
+            self.libdyson.request_environmental_data()
+            self._refresh_timer()
+        else:
+            logging.debug('Device %s is disconnected.')
+
+    def _create_libdyson_device(self):
+        return libdyson.get_device(self.serial, self._config_device.credentials,
+                                   self._config_device.product_type)
 
 
-class DysonClient:
-    """Connects to and monitors Dyson fans."""
+class ConnectionManager:
+    """Manages connections via manual IP or via libdyson Discovery.
 
-    def __init__(self, username, password, country, hosts: Optional[Dict] = None):
-        self.username = username
-        self.password = password
-        self.country = country
-        self.hosts = hosts or {}
+    Args:
+      update_fn: A callable taking a name, serial,
+      devices: a list of config.Device entities
+      hosts: a dict of serial -> IP address, for direct (non-zeroconf) connections.
+    """
 
-        self._account = None
+    def __init__(self, update_fn: Callable[[str, str, bool, bool], None],
+                 devices: List[config.Device], hosts: Dict[str, str]):
+        self._update_fn = update_fn
+        self._hosts = hosts
 
-    def login(self) -> bool:
-        """Attempts a login to DysonLink, returns True on success (False
-        otherwise)."""
-        self._account = dyson.DysonAccount(
-            self.username, self.password, self.country)
-        if not self._account.login():
-            logging.critical(
-                'Could not login to Dyson with username %s', self.username)
-            return False
+        logging.info('Starting discovery...')
+        self._discovery = libdyson.discovery.DysonDiscovery()
+        self._discovery.start_discovery()
 
-        return True
+        for device in devices:
+            self._add_device(DeviceWrapper(device))
 
-    def monitor(self, update_fn: Callable[[str, str, object], None], only_active=True) -> None:
-        """Sets up a background monitoring thread on each device.
+    def _add_device(self, device: DeviceWrapper, add_listener=True):
+        """Adds and connects to a device.
+
+        This will connect directly if the host is specified in hosts at
+        initialisation, otherwise we will attempt discovery via zeroconf.
 
         Args:
-          update_fn: callback function that will receive the device name, serial number, and
-              Dyson*State message for each update event from a device.
-          only_active: if True, will only setup monitoring on "active" devices.
+          device: a config.Device to add
+          add_listener: if True, will add callback listeners. Set to False if
+                        add_device() has been called on this device already.
         """
-        devices = self._account.devices()
-        for dev in devices:
-            if only_active and not dev.active:
-                logging.info('Found device "%s" (serial=%s) but is not active; skipping',
-                             dev.name, dev.serial)
-                continue
+        if add_listener:
+            callback_fn = functools.partial(self._device_callback, device)
+            device.libdyson.add_message_listener(callback_fn)
 
-            manual_ip = self.hosts.get(dev.serial.upper())
-            if manual_ip:
-                logging.info('Attempting connection to device "%s" (serial=%s) via configured IP %s',
-                             dev.name, dev.serial, manual_ip)
-                connected = dev.connect(manual_ip)
-            else:
-                logging.info('Attempting to discover device "%s" (serial=%s) via zeroconf',
-                             dev.name, dev.serial)
-                connected = dev.auto_connect()
-            if not connected:
-                logging.error('Could not connect to device "%s" (serial=%s); skipping',
-                              dev.name, dev.serial)
-                continue
+        manual_ip = self._hosts.get(device.serial.upper())
+        if manual_ip:
+            logging.info('Attempting connection to device "%s" (serial=%s) via configured IP %s',
+                         device.name, device.serial, manual_ip)
+            device.connect(manual_ip)
+        else:
+            logging.info('Attempting to discover device "%s" (serial=%s) via zeroconf',
+                         device.name, device.serial)
+            callback_fn = functools.partial(self._discovery_callback, device)
+            self._discovery.register_device(device.libdyson, callback_fn)
 
-            logging.info('Monitoring "%s" (serial=%s)', dev.name, dev.serial)
-            wrapped_fn = functools.partial(update_fn, dev.name, dev.serial)
+    @classmethod
+    def _discovery_callback(cls, device: DeviceWrapper, address: str):
+        # A note on concurrency: used with DysonDiscovery, this will be called
+        # back in a separate thread created by the underlying zeroconf library.
+        # When we call connect() on libpurecool or libdyson, that code spawns
+        # a new thread for MQTT and returns. In other words: we don't need to
+        # worry about connect() blocking zeroconf here.
+        logging.info('Discovered %s on %s', device.serial, address)
+        device.connect(address)
 
-            # Populate initial state values. Without this, we'll run without fan operating
-            # state until the next change event (which could be a while).
-            wrapped_fn(dev.state)
-            dev.add_message_listener(wrapped_fn)
+    def _device_callback(self, device, message):
+        logging.debug('Received update from %s: %s', device.serial, message)
+        if not device.is_connected:
+            logging.info(
+                'Device %s is now disconnected, clearing it and re-adding.', device.serial)
+            device.disconnect()
+            self._add_device(device, add_listener=False)
+            return
+
+        is_state = message == libdyson.MessageType.STATE
+        is_environ = message == libdyson.MessageType.ENVIRONMENTAL
+        self._update_fn(device.name, device.libdyson, is_state=is_state,
+                        is_environmental=is_environ)
 
 
 def _sleep_forever() -> None:
@@ -94,45 +162,6 @@ def _sleep_forever() -> None:
             break
 
 
-def _read_config(filename) -> Tuple[Optional[DysonLinkCredentials], Dict]:
-    """Reads configuration file.
-
-    Returns DysonLinkCredentials or None on error, and a dict
-    of configured device serial numbers mapping to IP addresses
-    """
-    config = configparser.ConfigParser()
-
-    logging.info('Reading "%s"', filename)
-
-    try:
-        config.read(filename)
-    except configparser.Error as ex:
-        logging.critical('Could not read "%s": %s', filename, ex)
-        return None, {}
-
-    try:
-        username = config['Dyson Link']['username']
-        password = config['Dyson Link']['password']
-        country = config['Dyson Link']['country']
-        creds = DysonLinkCredentials(username, password, country)
-    except KeyError as ex:
-        logging.critical('Required key missing in "%s": %s', filename, ex)
-        return None, {}
-
-    try:
-        hosts = config.items('Hosts')
-    except configparser.NoSectionError:
-        hosts = []
-        logging.debug('No "Devices" section found in config file, no manual IP overrides are available')
-
-    # Convert the hosts tuple (('serial0', 'ip0'), ('serial1', 'ip1'))
-    # into a dict {'SERIAL0': 'ip0', 'SERIAL1': 'ip1'}, making sure that
-    # the serial keys are upper case (configparser downcases everything)
-    host_dict = {h[0].upper(): h[1] for h in hosts}
-
-    return creds, host_dict
-
-
 def main(argv):
     """Main body of the program."""
     parser = argparse.ArgumentParser(prog=argv[0])
@@ -140,11 +169,18 @@ def main(argv):
                         type=int, default=8091)
     parser.add_argument(
         '--config', help='Configuration file (INI file)', default='config.ini')
+    parser.add_argument('--create_device_cache',
+                        help=('Performs a one-time login to Dyson\'s cloud service '
+                              'to identify your devices. This produces a config snippet '
+                              'to add to your config, which will be used to connect to '
+                              'your device. Use this when you first use this program and '
+                              'when you add or remove devices.'),
+                        action='store_true')
     parser.add_argument(
         '--log_level', help='Logging level (DEBUG, INFO, WARNING, ERROR)', type=str, default='INFO')
     parser.add_argument(
         '--include_inactive_devices',
-        help='Monitor devices marked as inactive by Dyson (default is only active)',
+        help='Do not use; this flag has no effect and remains for compatibility only',
         action='store_true')
     args = parser.parse_args()
 
@@ -156,29 +192,38 @@ def main(argv):
     args = parser.parse_args()
 
     logging.basicConfig(
-        format='%(asctime)s %(levelname)10s %(message)s',
+        format='%(asctime)s [%(thread)d] %(levelname)10s %(message)s',
         datefmt='%Y/%m/%d %H:%M:%S',
         level=level)
 
     logging.info('Starting up on port=%s', args.port)
 
     if args.include_inactive_devices:
-        logging.info('Including devices marked "inactive" from the Dyson API')
+        logging.warning(
+            '--include_inactive_devices is now inoperative and will be removed in a future release')
 
-    credentials, hosts = _read_config(args.config)
-    if not credentials:
+    try:
+        cfg = config.Config(args.config)
+    except:
+        logging.exception('Could not load configuration: %s', args.config)
         sys.exit(-1)
 
-    metrics = Metrics()
+    devices = cfg.devices
+    if len(devices) == 0:
+        logging.fatal(
+            'No devices configured; please re-run this program with --create_device_cache.')
+        sys.exit(-2)
+
+    if args.create_device_cache:
+        logging.info(
+            '--create_device_cache supplied; breaking out to perform this.')
+        account.generate_device_cache(cfg.dyson_credentials, args.config)
+        sys.exit(0)
+
     prometheus_client.start_http_server(args.port)
 
-    client = DysonClient(credentials.username,
-                         credentials.password, credentials.country, hosts)
-    if not client.login():
-        sys.exit(-1)
+    ConnectionManager(metrics.Metrics().update, devices, cfg.hosts)
 
-    client.monitor(
-        metrics.update, only_active=not args.include_inactive_devices)
     _sleep_forever()
 
 
