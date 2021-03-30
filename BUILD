@@ -109,5 +109,5 @@ pkg_deb(
     package = "prometheus-dyson",
     postrm = "debian/postrm",
     prerm = "debian/prerm",
-    version = "0.2.0",
+    version = "0.2.1",
 )
