@@ -54,7 +54,8 @@ class DeviceWrapper:
         return self.libdyson.is_connected
 
     def connect(self, host: str):
-        """Connect to the device and start the environmental monitoring timer."""
+        """Connect to the device and start the environmental monitoring
+        timer."""
         self.libdyson.connect(host)
         self._refresh_timer()
 
@@ -208,17 +209,22 @@ def main(argv):
         logging.exception('Could not load configuration: %s', args.config)
         sys.exit(-1)
 
+    if args.create_device_cache:
+        if not cfg.dyson_credentials:
+            logging.error('DysonLink credentials not found in %s, cannot generate device cache',
+                          args.config)
+            sys.exit(-1)
+
+        logging.info(
+            '--create_device_cache supplied; breaking out to perform this.')
+        account.generate_device_cache(cfg.dyson_credentials, args.config)
+        sys.exit(0)
+
     devices = cfg.devices
     if len(devices) == 0:
         logging.fatal(
             'No devices configured; please re-run this program with --create_device_cache.')
         sys.exit(-2)
-
-    if args.create_device_cache:
-        logging.info(
-            '--create_device_cache supplied; breaking out to perform this.')
-        account.generate_device_cache(cfg.dyson_credentials, args.config)
-        sys.exit(0)
 
     prometheus_client.start_http_server(args.port)
 
