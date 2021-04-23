@@ -53,11 +53,23 @@ class DeviceWrapper:
         """True if we're connected to the Dyson device."""
         return self.libdyson.is_connected
 
-    def connect(self, host: str):
+    def connect(self, host: str, retry_on_timeout_secs: int=30):
         """Connect to the device and start the environmental monitoring
-        timer."""
-        self.libdyson.connect(host)
-        self._refresh_timer()
+        timer.
+
+        Args:
+          host: ip or hostname of Dyson device
+          retry_on_timeout_secs: number of seconds to wait in between retries. this will block the running thread.
+        """
+        if self.is_connected:
+            logging.info('Already connected to %s (%s); no need to reconnect.', host, self.serial)
+        else:
+            try:
+                self.libdyson.connect(host)
+                self._refresh_timer()
+            except libdyson.exceptions.DysonConnectTimeout:
+                logging.error('Timeout connecting to %s (%s); will retry', host, self.serial)
+                threading.Timer(retry_on_timeout_secs, self.connect, args=[host]).start()
 
     def disconnect(self):
         """Disconnect from the Dyson device."""
@@ -75,7 +87,7 @@ class DeviceWrapper:
             self.libdyson.request_environmental_data()
             self._refresh_timer()
         else:
-            logging.debug('Device %s is disconnected.')
+            logging.debug('Device %s is disconnected.', self.serial)
 
     def _create_libdyson_device(self):
         return libdyson.get_device(self.serial, self._config_device.credentials,
@@ -143,8 +155,10 @@ class ConnectionManager:
         logging.debug('Received update from %s: %s', device.serial, message)
         if not device.is_connected:
             logging.info(
-                'Device %s is now disconnected, clearing it and re-adding.', device.serial)
+                'Device %s is now disconnected, clearing it and re-adding', device.serial)
             device.disconnect()
+            self._discovery.stop_discovery()
+            self._discovery.start_discovery()
             self._add_device(device, add_listener=False)
             return
 
