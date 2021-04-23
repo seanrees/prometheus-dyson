@@ -3,14 +3,6 @@ load("@pip//:requirements.bzl", "requirement")
 load("@rules_pkg//:pkg.bzl", "pkg_deb", "pkg_tar")
 
 py_library(
-    name = "account",
-    srcs = ["account.py"],
-    deps = [
-        requirement("libdyson"),
-    ],
-)
-
-py_library(
     name = "config",
     srcs = ["config.py"],
 )
@@ -46,7 +38,6 @@ py_binary(
     name = "main",
     srcs = ["main.py"],
     deps = [
-        ":account",
         ":config",
         ":metrics",
         requirement("prometheus_client"),
@@ -54,10 +45,22 @@ py_binary(
     ],
 )
 
+py_binary(
+    name = "config_builder",
+    srcs = ["config_builder.py"],
+    deps = [
+        ":config",
+        requirement("libdyson"),
+    ],
+)
+
 pkg_tar(
     name = "deb-bin",
     # This depends on --build_python_zip.
-    srcs = [":main"],
+    srcs = [
+      ":main",
+      ":config_builder"
+    ],
     mode = "0755",
     package_dir = "/opt/prometheus-dyson/bin",
 )
@@ -109,5 +112,5 @@ pkg_deb(
     package = "prometheus-dyson",
     postrm = "debian/postrm",
     prerm = "debian/prerm",
-    version = "0.2.1",
+    version = "0.3.0",
 )

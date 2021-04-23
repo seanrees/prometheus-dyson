@@ -60,7 +60,7 @@ class Config:
             country = self._config['Dyson Link']['country']
             return DysonLinkCredentials(username, password, country)
         except KeyError as ex:
-            logging.critical(
+            logging.warning(
                 'Required key missing in "%s": %s', self._filename, ex)
             return None
 

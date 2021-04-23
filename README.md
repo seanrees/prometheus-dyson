@@ -6,7 +6,7 @@ the V1 model (reports VOC and Dust) and the V2 models (those that report
 PM2.5, PM10, NOx, and VOC). Other Dyson fans may work out of the box or with
 minor modifications.
 
-## Updating instructions for 0.2.0
+## Updating instructions from 0.1.x (to 0.2.x or beyond)
 
 Due to changes in Dyson's Cloud API, automatic device detection based on your
 Dyson login/password no longer works reliably.
@@ -15,10 +15,8 @@ This means you need to take a _one-time_ manual step to upgrade. The upside
 to this is that it removes the runtime dependency on the Dyson API, because
 it will cache the device information locally.
 
-The manual step is to run this command and follow the prompts:
-```
-% /opt/prometheus-dyson/bin/main --create_device_cache
-```
+Please see the _Usage_ > _Configuration_ > _Automatic Setup_ section below for instructions.
+
 
 ## Build
 
@@ -43,7 +41,6 @@ You'll need these dependencies:
 % pip install libdyson
 % pip install prometheus_client
 ```
-
 
 ## Metrics
 
@@ -92,23 +89,35 @@ dyson_continuous_monitoring_mode | gauge | V2 fans only | continuous monitoring 
 This script reads `config.ini` (or another file, specified with `--config`)
 for your DysonLink login credentials.
 
+#### Automatic Setup
+
+TIP: you must do this if you're upgrading from 0.1.x (to 0.2.x or beyond)
+
+prometheus-dyson requires a configuration file to operate. In the Debian-based
+installation, this lives in ```/etc/prometheus-dyson/config.ini```.
+
+To generate this configuration, run the config builder, like this:
+```
+% /opt/prometheus-dyson/bin/config_builder
+```
+
+You will need to run this as root (or a user with write permissions to
+/etc/prometheus-dyson).
+
 #### Device Configuration
 
-Devices must be specifically listed in your `config.ini`. You can create this
-automatically by running the binary with `--create_device_cache` and following
-the prompts. A device entry looks like this:
+A device entry looks like this:
 
 ```
 [XX1-ZZ-ABC1234A]
-active = true
 name = My Fan
 serial = XX1-ZZ-ABC1234A
-version = 21.04.03
 localcredentials = a_random_looking_string==
-autoupdate = True
-newversionavailable = True
 producttype = 455
 ```
+
+The ```localcredentials``` field is provided by the Dyson Cloud API, please see
+the _Automatic Setup_ section.
 
 #### Manual IP Overrides
 
@@ -123,16 +132,12 @@ XX1-ZZ-ABC1234A = 10.10.100.55
 ### Args
 ```
 % ./prometheus_dyson.py --help
-usage: ./prometheus_dyson.py [-h] [--port PORT] [--config CONFIG] [--create_device_cache] [--log_level LOG_LEVEL]
+usage: ./prometheus_dyson.py [-h] [--port PORT] [--config CONFIG] [--log_level LOG_LEVEL]
 
 optional arguments:
   -h, --help            show this help message and exit
   --port PORT           HTTP server port
   --config CONFIG       Configuration file (INI file)
-  --create_device_cache
-                        Performs a one-time login to Dyson's cloud service to identify your devices. This produces
-                        a config snippet to add to your config, which will be used to connect to your device. Use
-                        this when you first use this program and when you add or remove devices.
   --log_level LOG_LEVEL
                         Logging level (DEBUG, INFO, WARNING, ERROR)
 ```

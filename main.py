@@ -15,7 +15,6 @@ import libdyson
 import libdyson.dyson_device
 import libdyson.exceptions
 
-import account
 import config
 import metrics
 
@@ -53,23 +52,25 @@ class DeviceWrapper:
         """True if we're connected to the Dyson device."""
         return self.libdyson.is_connected
 
-    def connect(self, host: str, retry_on_timeout_secs: int=30):
-        """Connect to the device and start the environmental monitoring
-        timer.
+    def connect(self, host: str, retry_on_timeout_secs: int = 30):
+        """Connect to the device and start the environmental monitoring timer.
 
         Args:
           host: ip or hostname of Dyson device
           retry_on_timeout_secs: number of seconds to wait in between retries. this will block the running thread.
         """
         if self.is_connected:
-            logging.info('Already connected to %s (%s); no need to reconnect.', host, self.serial)
+            logging.info(
+                'Already connected to %s (%s); no need to reconnect.', host, self.serial)
         else:
             try:
                 self.libdyson.connect(host)
                 self._refresh_timer()
             except libdyson.exceptions.DysonConnectTimeout:
-                logging.error('Timeout connecting to %s (%s); will retry', host, self.serial)
-                threading.Timer(retry_on_timeout_secs, self.connect, args=[host]).start()
+                logging.error(
+                    'Timeout connecting to %s (%s); will retry', host, self.serial)
+                threading.Timer(retry_on_timeout_secs,
+                                self.connect, args=[host]).start()
 
     def disconnect(self):
         """Disconnect from the Dyson device."""
@@ -184,13 +185,6 @@ def main(argv):
                         type=int, default=8091)
     parser.add_argument(
         '--config', help='Configuration file (INI file)', default='config.ini')
-    parser.add_argument('--create_device_cache',
-                        help=('Performs a one-time login to Dyson\'s cloud service '
-                              'to identify your devices. This produces a config snippet '
-                              'to add to your config, which will be used to connect to '
-                              'your device. Use this when you first use this program and '
-                              'when you add or remove devices.'),
-                        action='store_true')
     parser.add_argument(
         '--log_level', help='Logging level (DEBUG, INFO, WARNING, ERROR)', type=str, default='INFO')
     parser.add_argument(
@@ -222,17 +216,6 @@ def main(argv):
     except:
         logging.exception('Could not load configuration: %s', args.config)
         sys.exit(-1)
-
-    if args.create_device_cache:
-        if not cfg.dyson_credentials:
-            logging.error('DysonLink credentials not found in %s, cannot generate device cache',
-                          args.config)
-            sys.exit(-1)
-
-        logging.info(
-            '--create_device_cache supplied; breaking out to perform this.')
-        account.generate_device_cache(cfg.dyson_credentials, args.config)
-        sys.exit(0)
 
     devices = cfg.devices
     if len(devices) == 0:
