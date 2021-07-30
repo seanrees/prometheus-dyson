@@ -84,6 +84,29 @@ class TestMetrics(unittest.TestCase):
             got = self.registry.get_sample_value(metric, labels)
             self.assertEqual(got, want, f'metric {metric}')
 
+    def test_update_formaldehyde_environmental(self):
+        device = libdyson.DysonPureCoolFormaldehyde(
+            SERIAL, CREDENTIALS, libdyson.DEVICE_TYPE_PURE_COOL_FORMALDEHYDE)
+        payload = {
+            'msg': 'ENVIRONMENTAL-CURRENT-SENSOR-DATA',
+            'time': '2021-03-17T15:09:23.000Z',
+            'data': {'tact': '2956', 'hact': '0047', 'pm10': '3', 'pm25': 'INIT',
+                     'noxl': 30, 'va10': 'INIT', 'hcho': '0002', 'hchr': '0003',
+                     'sltm': 'OFF'}
+        }
+        device._handle_message(payload)
+
+        labels = {'name': NAME, 'serial': SERIAL}
+        self.metrics.update(NAME, device, is_state=False,
+                            is_environmental=True)
+
+        cases = {
+            'dyson_formaldehyde_units': 2,
+        }
+        for metric, want in cases.items():
+            got = self.registry.get_sample_value(metric, labels)
+            self.assertEqual(got, want, f'metric {metric}')
+
     def test_update_v1_state(self):
         device = libdyson.DysonPureHotCoolLink(
             SERIAL, CREDENTIALS, libdyson.DEVICE_TYPE_PURE_HOT_COOL_LINK)

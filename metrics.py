@@ -122,6 +122,8 @@ class Metrics:
             'dyson_pm10_units', 'Level of PM10 particulate matter (V2 units only)')
         self.nox = make_gauge('dyson_nitrogen_oxide_units',
                               'Level of nitrogen oxides (NOx, V2 units only)')
+        self.formaldehyde = make_gauge(
+            'dyson_formaldehyde_units', 'Level of formaldehyde/H-CHO (Formaldehyde unit only)')
 
         # Operational State (v1 & v2 common)
         # Not included: tilt (known values: "OK", others?), standby_monitoring.
@@ -234,6 +236,9 @@ class Metrics:
             nox = nox/10
         update_env_gauge(self.voc, name, device.serial, voc)
         update_env_gauge(self.nox, name, device.serial, nox)
+
+        if isinstance(device, libdyson.DysonPureCoolFormaldehyde):
+          update_env_gauge(self.formaldehyde, name, device.serial, device.formaldehyde)
 
     def update_common_environmental(self, name: str, device) -> None:
         update_gauge(self.last_update_environmental,

@@ -54,6 +54,7 @@ dyson_volatile_organic_compounds_units | gauge | all | volatile organic compound
 dyson_dust_units | gauge | V1 fans only | dust level (range 0-10)
 dyson_pm25_units | gauge | V2 fans only | PM2.5 units (µg/m^3 ?)
 dyson_pm10_units | gauge | V2 fans only | PM10 units (µg/m^3 ?)
+dyson_formaldehyde_units | gauge | Formaldehyde units only | Formaldehyde/H-CHO units
 dyson_nitrogen_oxide_units | gauge | V2 fans only | Nitrogen Oxide (NOx) levels (range 0-10)
 
 
