@@ -1,3 +1,5 @@
+![Build and Test](https://github.com/seanrees/prometheus-dyson/actions/workflows/build.yml/badge.svg)
+
 # prometheus_dyson
 Prometheus client for DysonLink fans (e.g; Pure Hot+Cool and Pure Cool).
 
