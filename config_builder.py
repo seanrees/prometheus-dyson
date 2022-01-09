@@ -10,8 +10,9 @@ import io
 import logging
 import sys
 
-from typing import Dict, List
+from typing import Dict, List, Tuple, Optional
 
+from libdyson import DEVICE_TYPE_NAMES, get_mqtt_info_from_wifi_info
 from libdyson.cloud import DysonAccount, DysonDeviceInfo
 from libdyson.cloud.account import DysonAccountCN
 from libdyson.exceptions import DysonOTPTooFrequently, DysonLoginFailure
@@ -34,6 +35,25 @@ def _query_credentials() -> config.DysonLinkCredentials:
     country = input('Country code (e.g; IE): ')
 
     return config.DysonLinkCredentials(username, password, country)
+
+
+def _query_wifi() -> Tuple[str, str, str]:
+    """Asks the user for their DysonLink/Cloud credentials.
+
+    Returns:
+      DysonLinkCredentials based on what the user supplied
+    """
+    print('This requires the WiFi credentials from the label on the Dyson')
+    print('device. This will be used to calculate the secret required')
+    print('to connect to this device locally. This script does NOT need')
+    print('to modify WiFi settings in any way.')
+    print('')
+    print('The product SSID might look like: DYSON-AB0-XX-ABC1234D-123')
+    print('')
+    ssid = input('Enter product SSID            : ')
+    password = input('Enter product WiFi password   : ')
+    name = input('Device name (e.g; Living Room): ')
+    return (ssid, password, name)
 
 
 def _query_dyson(creds: config.DysonLinkCredentials) -> List[DysonDeviceInfo]:
@@ -77,7 +97,7 @@ def _query_dyson(creds: config.DysonLinkCredentials) -> List[DysonDeviceInfo]:
         sys.exit(-1)
 
 
-def write_config(filename: str, creds: config.DysonLinkCredentials,
+def write_config(filename: str, creds: Optional[config.DysonLinkCredentials],
                  devices: List[DysonDeviceInfo], hosts: Dict[str, str]) -> None:
     """Writes the config out to filename.
 
@@ -89,11 +109,12 @@ def write_config(filename: str, creds: config.DysonLinkCredentials,
     """
     cfg = configparser.ConfigParser()
 
-    cfg['Dyson Link'] = {
-        'Username': creds.username,
-        'Password': creds.password,
-        'Country': creds.country
-    }
+    if creds:
+        cfg['Dyson Link'] = {
+            'Username': creds.username,
+            'Password': creds.password,
+            'Country': creds.country
+        }
 
     cfg['Hosts'] = hosts
 
@@ -117,7 +138,7 @@ def write_config(filename: str, creds: config.DysonLinkCredentials,
     if len(ack) > 0 and ack.upper()[0] == 'Y':
         with open(filename, 'w') as f:
             cfg.write(f)
-        print(f'Config written to {config}.')
+        print(f'Config written to {filename}.')
     else:
         print('Received negative answer; nothing written.')
 
@@ -131,7 +152,14 @@ def main(argv):
         type=str,
         default='ERROR')
     parser.add_argument(
-        '--config', help='Configuration file (INI file)', default='/etc/prometheus-dyson/config.ini')
+        '--config',
+        help='Configuration file (INI file)',
+        default='/etc/prometheus-dyson/config.ini')
+    parser.add_argument(
+        '--mode',
+        help='Use "wifi" to add devices from WiFi credentials, "cloud" to try via Dyson Link"',
+        default='cloud'
+    )
     args = parser.parse_args()
 
     try:
@@ -148,6 +176,10 @@ def main(argv):
 
     print('Welcome to the prometheus-dyson config builder.')
 
+    if args.mode not in ('cloud', 'wifi'):
+        print(f'Invalid --mode: {args.mode}, must be one of "cloud" or "wifi"')
+        sys.exit(-2)
+
     cfg = None
     creds = None
     hosts = {}
@@ -159,19 +191,36 @@ def main(argv):
         logging.info(
             'Could not load configuration: %s (assuming no configuration)', args.config)
 
-    if not creds:
-        print('')
-        creds = _query_credentials()
-    else:
-        print(f'Using Dyson credentials from {args.config}')
+    if args.mode == 'cloud':
+        if not creds:
+            print('')
+            creds = _query_credentials()
+        else:
+            print(f'Using Dyson credentials from {args.config}')
 
-    try:
-        print()
-        devices = _query_dyson(creds)
-        print(f'Found {len(devices)} devices.')
-    except DysonOTPTooFrequently:
-        print('DysonOTPTooFrequently: too many OTP attempts, please wait and try again')
-        sys.exit(-1)
+        try:
+            print()
+            devices = _query_dyson(creds)
+            print(f'Found {len(devices)} devices.')
+        except DysonOTPTooFrequently:
+            print(
+                'DysonOTPTooFrequently: too many OTP attempts, please wait and try again')
+            sys.exit(-1)
+    else:
+        ssid, password, name = _query_wifi()
+        serial, credential, product_type = get_mqtt_info_from_wifi_info(
+            ssid, password)
+
+        devices = [DysonDeviceInfo(
+            name=name,
+            active=True,
+            version='unknown',
+            new_version_available=False,
+            auto_update=False,
+            serial=serial,
+            credential=credential,
+            product_type=product_type
+        )]
 
     print()
     write_config(args.config, creds, devices, hosts)
