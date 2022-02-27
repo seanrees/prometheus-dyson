@@ -85,7 +85,10 @@ class DeviceWrapper:
         if self.is_connected:
             logging.debug(
                 'Requesting updated environmental data from %s', self.serial)
-            self.libdyson.request_environmental_data()
+            try:
+                self.libdyson.request_environmental_data()
+            except AttributeError:
+                logging.error('Race with a disconnect? Skipping an iteration.')
             self._refresh_timer()
         else:
             logging.debug('Device %s is disconnected.', self.serial)
