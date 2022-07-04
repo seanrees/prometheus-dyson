@@ -13,6 +13,9 @@ import connect
 import metrics
 
 
+logger = logging.getLogger(__name__)
+
+
 def _sleep_forever() -> None:
     """Sleeps the calling thread until a keyboard interrupt occurs."""
     while True:
