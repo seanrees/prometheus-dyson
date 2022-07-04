@@ -23,7 +23,7 @@ def device_callback(
     name: str,
     device: libdyson.dyson_device.DysonFanDevice,
     is_state=False,
-    unused_is_environ=False,
+    is_environmental=False,
 ) -> None:
     """Callback for libdyson.
 
