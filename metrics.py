@@ -16,6 +16,8 @@ from prometheus_client import Gauge, Enum, REGISTRY
 # slightly rounded value instead.
 KELVIN_TO_CELSIUS = -273
 
+logger = logging.getLogger(__name__)
+
 
 def enum_values(cls):
     return [x.value for x in list(cls)]
@@ -190,7 +192,7 @@ class Metrics:
           is_enviromental: is an environmental (temperature, humidity, etc) update.
         """
         if not device:
-            logging.error('Ignoring update, device is None')
+            logger.error('Ignoring update, device is None')
 
         serial = device.serial
 
@@ -207,8 +209,8 @@ class Metrics:
             if is_state:
                 self.update_v1_state(name, device, heating)
         else:
-            logging.warning('Received unknown update from "%s" (serial=%s): %s; ignoring',
-                            name, serial, type(device))
+            logger.warning('Received unknown update from "%s" (serial=%s): %s; ignoring',
+                           name, serial, type(device))
 
     def update_v1_environmental(self, name: str, device) -> None:
         self.update_common_environmental(name, device)
@@ -238,7 +240,8 @@ class Metrics:
         update_env_gauge(self.nox, name, device.serial, nox)
 
         if isinstance(device, libdyson.DysonPureCoolFormaldehyde):
-          update_env_gauge(self.formaldehyde, name, device.serial, device.formaldehyde)
+            update_env_gauge(self.formaldehyde, name,
+                             device.serial, device.formaldehyde)
 
     def update_common_environmental(self, name: str, device) -> None:
         update_gauge(self.last_update_environmental,

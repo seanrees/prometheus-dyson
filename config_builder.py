@@ -19,6 +19,8 @@ from libdyson.exceptions import DysonOTPTooFrequently, DysonLoginFailure
 
 import config
 
+logger = logging.getLogger(__name__)
+
 
 def _query_credentials() -> config.DysonLinkCredentials:
     """Asks the user for their DysonLink/Cloud credentials.
@@ -170,7 +172,7 @@ def main(argv):
     args = parser.parse_args()
 
     logging.basicConfig(
-        format='%(asctime)s [%(thread)d] %(levelname)10s %(message)s',
+        format='%(asctime)s [%(name)8s %(thread)d] %(levelname)10s %(message)s',
         datefmt='%Y/%m/%d %H:%M:%S',
         level=level)
 
@@ -188,7 +190,7 @@ def main(argv):
         creds = cfg.dyson_credentials
         hosts = cfg.hosts
     except:
-        logging.info(
+        logger.info(
             'Could not load configuration: %s (assuming no configuration)', args.config)
 
     if args.mode == 'cloud':

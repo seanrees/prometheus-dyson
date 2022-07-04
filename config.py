@@ -11,6 +11,8 @@ Device = collections.namedtuple(
 DysonLinkCredentials = collections.namedtuple(
     'DysonLinkCredentials', ['username', 'password', 'country'])
 
+logger = logging.getLogger(__name__)
+
 
 class Config:
     """Reads the configuration file and provides handy accessors.
@@ -18,6 +20,7 @@ class Config:
     Args:
       filename: path (absolute or relative) to the config file (ini format).
     """
+
     def __init__(self, filename: str):
         self._filename = filename
         self._config = self.load(filename)
@@ -31,12 +34,12 @@ class Config:
         """
         config = configparser.ConfigParser()
 
-        logging.info('Reading "%s"', filename)
+        logger.info('Reading "%s"', filename)
 
         try:
             config.read(filename)
         except configparser.Error as ex:
-            logging.critical('Could not read "%s": %s', filename, ex)
+            logger.critical('Could not read "%s": %s', filename, ex)
             raise ex
 
         return config
@@ -60,7 +63,7 @@ class Config:
             country = self._config['Dyson Link']['country']
             return DysonLinkCredentials(username, password, country)
         except KeyError as ex:
-            logging.warning(
+            logger.warning(
                 'Required key missing in "%s": %s', self._filename, ex)
             return None
 
@@ -78,7 +81,7 @@ class Config:
             hosts = self._config.items('Hosts')
         except configparser.NoSectionError:
             hosts = []
-            logging.debug(
+            logger.debug(
                 'No "Hosts" section found in config file, no manual IP overrides are available')
 
         # Convert the hosts tuple (('serial0', 'ip0'), ('serial1', 'ip1'))
