@@ -5,6 +5,7 @@ load("@rules_pkg//:pkg.bzl", "pkg_deb", "pkg_tar")
 py_library(
     name = "config",
     srcs = ["config.py"],
+    visibility = ["//:__subpackages__"]
 )
 
 py_test(
@@ -12,6 +13,16 @@ py_test(
     srcs = ["config_test.py"],
     deps = [
         ":config",
+    ],
+)
+
+py_library(
+    name = "connect",
+    srcs = ["connect.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":config",
+        requirement("libdyson"),
     ],
 )
 
@@ -39,9 +50,9 @@ py_binary(
     srcs = ["main.py"],
     deps = [
         ":config",
+        ":connect",
         ":metrics",
         requirement("prometheus_client"),
-        requirement("libdyson"),
     ],
 )
 
