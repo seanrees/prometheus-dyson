@@ -5,7 +5,7 @@ load("@rules_pkg//:pkg.bzl", "pkg_deb", "pkg_tar")
 py_library(
     name = "config",
     srcs = ["config.py"],
-    visibility = ["//:__subpackages__"]
+    visibility = ["//:__subpackages__"],
 )
 
 py_test(
@@ -69,8 +69,9 @@ pkg_tar(
     name = "deb-bin",
     # This depends on --build_python_zip.
     srcs = [
-      ":main",
-      ":config_builder"
+        ":config_builder",
+        ":main",
+        "//misc:switch_heat_mode",
     ],
     mode = "0755",
     package_dir = "/opt/prometheus-dyson/bin",
@@ -123,5 +124,5 @@ pkg_deb(
     package = "prometheus-dyson",
     postrm = "debian/postrm",
     prerm = "debian/prerm",
-    version = "0.3.4",
+    version = "0.4.0",
 )
