@@ -5,6 +5,7 @@ load("@rules_pkg//:pkg.bzl", "pkg_deb", "pkg_tar")
 py_binary(
     name = "switch_heat_mode",
     srcs = ["switch_heat_mode.py"],
+    visibility = ["//:__pkg__"],
     deps = [
         "//:config",
         "//:connect",
