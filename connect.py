@@ -188,3 +188,4 @@ class ConnectionManager:
         is_environ = message == libdyson.MessageType.ENVIRONMENTAL
         self._update_fn(device.name, device.libdyson, is_state=is_state,
                         is_environmental=is_environ)
+
