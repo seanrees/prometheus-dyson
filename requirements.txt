@@ -11,5 +11,5 @@ paho-mqtt==1.6.1
 prometheus-client==0.15.0
 pycparser==2.21
 requests==2.31.0
-urllib3==1.26.13
+urllib3==1.26.18
 zeroconf==0.39.4
